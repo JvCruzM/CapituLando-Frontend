@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
+import { Eye, EyeOff } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 export default function CadastroPage() {
   const [nome, setNome] = useState("");
@@ -10,14 +12,17 @@ export default function CadastroPage() {
   const [confirmarSenha, setConfirmarSenha] = useState("");
 
   const [erro, setErro] = useState("");
+  const [sucesso, setSucesso] = useState("");
+  const [carregando, setCarregando] = useState(false);
 
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
 
-  function handleCadastro(event: FormEvent<HTMLFormElement>) {
+  async function handleCadastro(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setErro("");
+    setSucesso("");
 
     if (!nome || !email || !senha || !confirmarSenha) {
       setErro("Preencha todos os campos.");
@@ -39,30 +44,66 @@ export default function CadastroPage() {
       return;
     }
 
-    console.log("Cadastro:", {
-      nome,
+    setCarregando(true);
+
+    const supabase = createClient();
+
+    const { error } = await supabase.auth.signUp({
       email,
-      senha,
+      password: senha,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+        data: {
+          username: nome,
+          display_name: nome,
+        },
+      },
     });
+
+    setCarregando(false);
+
+    if (error) {
+      setErro(error.message);
+      return;
+    }
+
+    setSucesso(
+      "Conta criada com sucesso! Verifique seu e-mail para confirmar a conta.",
+    );
+
+    setNome("");
+    setEmail("");
+    setSenha("");
+    setConfirmarSenha("");
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#F5F0E8] p-6">
+      {" "}
       <div className="w-full max-w-md rounded-[2rem] border border-[#D8C4DC] bg-[#FFFDF9] p-10 shadow-[0_15px_40px_rgba(75,40,88,0.12)]">
+        {" "}
         <h1 className="text-3xl font-bold text-[#4B2858]">
-          Comece sua história
+          Comece sua história{" "}
         </h1>
-
         <p className="mt-2 text-[#705979]">
           Crie sua conta e comece a escrever.
         </p>
-
         {erro && (
-          <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700">
+          <p
+            role="alert"
+            className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-700"
+          >
             {erro}
           </p>
         )}
-
+        {sucesso && (
+          <p
+            role="status"
+            className="mt-4 rounded-xl bg-green-50 p-3 text-sm text-green-700"
+          >
+            {sucesso}
+          </p>
+        )}
         <form className="mt-8" onSubmit={handleCadastro}>
           <div className="mb-5">
             <label
@@ -78,6 +119,7 @@ export default function CadastroPage() {
               value={nome}
               onChange={(event) => setNome(event.target.value)}
               placeholder="Como quer ser chamado?"
+              autoComplete="username"
               className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 outline-none transition focus:border-[#704B7C]"
             />
           </div>
@@ -96,6 +138,7 @@ export default function CadastroPage() {
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="seuemail@email.com"
+              autoComplete="email"
               className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 outline-none transition focus:border-[#704B7C]"
             />
           </div>
@@ -115,6 +158,7 @@ export default function CadastroPage() {
                 value={senha}
                 onChange={(event) => setSenha(event.target.value)}
                 placeholder="Crie uma senha"
+                autoComplete="new-password"
                 className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 pr-12 outline-none transition focus:border-[#704B7C]"
               />
 
@@ -122,10 +166,9 @@ export default function CadastroPage() {
                 type="button"
                 onClick={() => setMostrarSenha(!mostrarSenha)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#704B7C]"
-                aria-label={
-                  mostrarSenha ? "Ocultar senha" : "Mostrar senha"
-                }
+                aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
               >
+                {mostrarSenha ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
 
@@ -147,18 +190,15 @@ export default function CadastroPage() {
                 type={mostrarConfirmarSenha ? "text" : "password"}
                 id="confirmarSenha"
                 value={confirmarSenha}
-                onChange={(event) =>
-                  setConfirmarSenha(event.target.value)
-                }
+                onChange={(event) => setConfirmarSenha(event.target.value)}
                 placeholder="Digite sua senha novamente"
+                autoComplete="new-password"
                 className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 pr-12 outline-none transition focus:border-[#704B7C]"
               />
 
               <button
                 type="button"
-                onClick={() =>
-                  setMostrarConfirmarSenha(!mostrarConfirmarSenha)
-                }
+                onClick={() => setMostrarConfirmarSenha(!mostrarConfirmarSenha)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#704B7C]"
                 aria-label={
                   mostrarConfirmarSenha
@@ -166,18 +206,23 @@ export default function CadastroPage() {
                     : "Mostrar confirmação de senha"
                 }
               >
-                </button>
+                {mostrarConfirmarSenha ? (
+                  <EyeOff size={20} />
+                ) : (
+                  <Eye size={20} />
+                )}
+              </button>
             </div>
           </div>
 
           <button
             type="submit"
-            className="w-full rounded-xl bg-[#704B7C] py-3 font-semibold text-white transition hover:bg-[#5B3A67]"
+            disabled={carregando}
+            className="w-full rounded-xl bg-[#704B7C] py-3 font-semibold text-white transition hover:bg-[#5B3A67] disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Criar conta
+            {carregando ? "Criando conta..." : "Criar conta"}
           </button>
         </form>
-
         <p className="mt-6 text-center text-sm text-[#705979]">
           Já possui uma conta?{" "}
           <Link
