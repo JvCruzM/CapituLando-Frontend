@@ -3,87 +3,73 @@
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { Eye, EyeOff } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { apiRequest, type ApiMessage } from "@/lib/api";
 
 export default function CadastroPage() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
-
   const [erro, setErro] = useState("");
   const [sucesso, setSucesso] = useState("");
   const [carregando, setCarregando] = useState(false);
-
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmarSenha, setMostrarConfirmarSenha] = useState(false);
 
   async function handleCadastro(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setErro("");
     setSucesso("");
 
-    if (!nome || !email || !senha || !confirmarSenha) {
-      setErro("Preencha todos os campos.");
+    if (!/^[A-Za-z0-9._-]{3,50}$/.test(nome.trim())) {
+      setErro(
+        "Use de 3 a 50 caracteres no nome de usuário, sem espaços ou acentos.",
+      );
       return;
     }
-
-    if (!email.includes("@")) {
-      setErro("Digite um e-mail válido.");
-      return;
-    }
-
     if (senha.length < 6) {
       setErro("A senha precisa ter pelo menos 6 caracteres.");
       return;
     }
-
     if (senha !== confirmarSenha) {
       setErro("As senhas não são iguais.");
       return;
     }
 
     setCarregando(true);
-
-    const supabase = createClient();
-
-    const { error } = await supabase.auth.signUp({
-      email,
-      password: senha,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-        data: {
-          username: nome,
-          display_name: nome,
-        },
-      },
-    });
-
-    setCarregando(false);
-
-    if (error) {
-      setErro(error.message);
-      return;
+    try {
+      const result = await apiRequest<ApiMessage>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          username: nome.trim(),
+          email: email.trim(),
+          password: senha,
+        }),
+      });
+      setSucesso(
+        result.message ||
+          "Cadastro iniciado. Confira seu e-mail para confirmar a conta.",
+      );
+      setNome("");
+      setEmail("");
+      setSenha("");
+      setConfirmarSenha("");
+    } catch (error) {
+      setErro(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível criar a conta. Tente novamente.",
+      );
+    } finally {
+      setCarregando(false);
     }
-
-    setSucesso(
-      "Conta criada com sucesso! Verifique seu e-mail para confirmar a conta.",
-    );
-
-    setNome("");
-    setEmail("");
-    setSenha("");
-    setConfirmarSenha("");
   }
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-[#F5F0E8] p-6">
-      {" "}
       <div className="w-full max-w-md rounded-[2rem] border border-[#D8C4DC] bg-[#FFFDF9] p-10 shadow-[0_15px_40px_rgba(75,40,88,0.12)]">
-        {" "}
         <h1 className="text-3xl font-bold text-[#4B2858]">
-          Comece sua história{" "}
+          Comece sua história
         </h1>
         <p className="mt-2 text-[#705979]">
           Crie sua conta e comece a escrever.
@@ -112,18 +98,18 @@ export default function CadastroPage() {
             >
               Nome de usuário
             </label>
-
             <input
-              type="text"
               id="nome"
+              required
+              minLength={3}
+              maxLength={50}
               value={nome}
               onChange={(event) => setNome(event.target.value)}
-              placeholder="Como quer ser chamado?"
+              placeholder="Escolha um nome sem espaços"
               autoComplete="username"
               className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 outline-none transition focus:border-[#704B7C]"
             />
           </div>
-
           <div className="mb-5">
             <label
               htmlFor="email"
@@ -131,10 +117,11 @@ export default function CadastroPage() {
             >
               E-mail
             </label>
-
             <input
-              type="email"
               id="email"
+              type="email"
+              required
+              maxLength={320}
               value={email}
               onChange={(event) => setEmail(event.target.value)}
               placeholder="seuemail@email.com"
@@ -142,7 +129,6 @@ export default function CadastroPage() {
               className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 outline-none transition focus:border-[#704B7C]"
             />
           </div>
-
           <div className="mb-5">
             <label
               htmlFor="senha"
@@ -150,33 +136,31 @@ export default function CadastroPage() {
             >
               Senha
             </label>
-
             <div className="relative">
               <input
-                type={mostrarSenha ? "text" : "password"}
                 id="senha"
+                type={mostrarSenha ? "text" : "password"}
+                required
+                minLength={6}
                 value={senha}
                 onChange={(event) => setSenha(event.target.value)}
                 placeholder="Crie uma senha"
                 autoComplete="new-password"
                 className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 pr-12 outline-none transition focus:border-[#704B7C]"
               />
-
               <button
                 type="button"
-                onClick={() => setMostrarSenha(!mostrarSenha)}
+                onClick={() => setMostrarSenha((current) => !current)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#704B7C]"
                 aria-label={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
               >
                 {mostrarSenha ? <EyeOff size={20} /> : <Eye size={20} />}
               </button>
             </div>
-
             <p className="mt-2 text-xs text-[#705979]">
               A senha deve ter pelo menos 6 caracteres.
             </p>
           </div>
-
           <div className="mb-6">
             <label
               htmlFor="confirmarSenha"
@@ -184,21 +168,20 @@ export default function CadastroPage() {
             >
               Confirmar senha
             </label>
-
             <div className="relative">
               <input
-                type={mostrarConfirmarSenha ? "text" : "password"}
                 id="confirmarSenha"
+                type={mostrarConfirmarSenha ? "text" : "password"}
+                required
                 value={confirmarSenha}
                 onChange={(event) => setConfirmarSenha(event.target.value)}
                 placeholder="Digite sua senha novamente"
                 autoComplete="new-password"
                 className="w-full rounded-xl border-2 border-[#D8C4DC] bg-[#FFFDF9] px-4 py-3 pr-12 outline-none transition focus:border-[#704B7C]"
               />
-
               <button
                 type="button"
-                onClick={() => setMostrarConfirmarSenha(!mostrarConfirmarSenha)}
+                onClick={() => setMostrarConfirmarSenha((current) => !current)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-[#704B7C]"
                 aria-label={
                   mostrarConfirmarSenha
@@ -214,7 +197,6 @@ export default function CadastroPage() {
               </button>
             </div>
           </div>
-
           <button
             type="submit"
             disabled={carregando}

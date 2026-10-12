@@ -9,13 +9,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        'cozy-green-dark': '#385338',
-        'cozy-green-light': '#516f4f',
-        'cozy-bg': '#ebd9c6',
-        'cozy-card': '#f7eee3',
-        'cozy-card-border': '#d8c2aa',
-        'cozy-brown': '#7a5230',
-        'cozy-brown-light': '#a17855',
+        "cozy-green-dark": "#385338",
+        "cozy-green-light": "#516f4f",
+        "cozy-bg": "#ebd9c6",
+        "cozy-card": "#f7eee3",
+        "cozy-card-border": "#d8c2aa",
+        "cozy-brown": "#7a5230",
+        "cozy-brown-light": "#a17855",
       },
     },
   },
