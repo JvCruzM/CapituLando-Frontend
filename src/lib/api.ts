@@ -2,6 +2,15 @@ const API_BASE_URL = (
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"
 ).replace(/\/+$/, "");
 
+const PUBLIC_AUTH_PATHS = new Set([
+  "/auth/register",
+  "/auth/verify-email",
+  "/auth/resend-verification",
+  "/auth/login",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+]);
+
 export interface ApiMessage {
   message: string;
 }
@@ -31,7 +40,10 @@ export async function apiRequest<T>(
   }
   headers.set("Accept", "application/json");
 
-  if (typeof window !== "undefined") {
+  const requestPath = path.split("?", 1)[0];
+  const isPublicAuthRequest = PUBLIC_AUTH_PATHS.has(requestPath);
+
+  if (typeof window !== "undefined" && !isPublicAuthRequest) {
     const token = window.sessionStorage.getItem("capitulando_access_token");
     if (token && !headers.has("Authorization")) {
       headers.set("Authorization", `Bearer ${token}`);

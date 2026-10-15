@@ -39,6 +39,8 @@ function RedefinirSenhaForm() {
         method: "POST",
         body: JSON.stringify({ token, newPassword: senha }),
       });
+      window.sessionStorage.removeItem("capitulando_access_token");
+      window.sessionStorage.removeItem("capitulando_user");
       setMensagem(result.message || "Senha redefinida com sucesso.");
       setSenha("");
       setConfirmarSenha("");
