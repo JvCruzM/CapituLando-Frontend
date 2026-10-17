@@ -69,7 +69,7 @@ export function ProjectsSection() {
                   </div>
                 </div>
                 <h3 className="text-lg font-bold font-serif text-stone-900 dark:text-stone-100">{project.title}</h3>
-                {project.description && <p className="text-xs text-stone-600 dark:text-stone-400 italic font-serif">"{project.description}"</p>}
+                {project.description && <p className="text-xs text-stone-600 dark:text-stone-400 italic font-serif">&ldquo;{project.description}&rdquo;</p>}
               </div>
 
               <div className="space-y-3 pt-2">

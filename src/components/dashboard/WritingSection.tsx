@@ -92,9 +92,12 @@ export function WritingSpace() {
   }, [content, title]);
 
   const plainText = (() => {
-    const tmp = document.createElement('DIV');
-    tmp.innerHTML = content;
-    return tmp.textContent || tmp.innerText || '';
+    if (typeof document !== 'undefined') {
+      const tmp = document.createElement('DIV');
+      tmp.innerHTML = content;
+      return tmp.textContent || tmp.innerText || '';
+    }
+    return content.replace(/<[^>]*>/g, '');
   })();
 
   const wordCount = plainText.trim() ? plainText.trim().split(/\s+/).length : 0;

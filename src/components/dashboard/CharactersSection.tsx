@@ -248,7 +248,7 @@ export function CharactersSection() {
 
                 {char.motto && (
                   <div className="p-2 bg-white/70 dark:bg-[#221a2b] rounded-2xl border border-stone-200/80 dark:border-[#382b47] text-center text-[11px] font-serif italic text-stone-800 dark:text-stone-200 truncate">
-                    "{char.motto}"
+                    &ldquo;{char.motto}&rdquo;
                   </div>
                 )}
               </div>

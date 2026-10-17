@@ -152,7 +152,7 @@ export function ProfileSection() {
             </div>
             {profile.quote && (
               <div className="p-3 bg-stone-50 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-2xl w-full">
-                <p className="text-xs font-serif italic text-stone-700 dark:text-stone-300">"{profile.quote}"</p>
+                <p className="text-xs font-serif italic text-stone-700 dark:text-stone-300">&ldquo;{profile.quote}&rdquo;</p>
               </div>
             )}
             <div className="w-full pt-2 border-t border-stone-100 dark:border-stone-800 text-xs space-y-2 text-stone-600 dark:text-stone-400 text-left">

@@ -47,10 +47,13 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
-      // Limpa as chaves da sessão
+      // Limpa as chaves da sessão de autenticação e perfis
+      sessionStorage.removeItem('capitulando_access_token');
+      sessionStorage.removeItem('capitulando_user');
+      sessionStorage.removeItem('capitulando_active_profile');
       localStorage.removeItem('capitulando_active_profile_id');
       localStorage.removeItem('capitulando_logged_user');
-      window.location.href = '/login';
+      router.push('/login');
     }
   };
 

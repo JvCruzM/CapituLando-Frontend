@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Lightbulb, Plus, Trash2, Edit2, X, Check, Sparkles, BookOpen, User, Globe, ShieldAlert, BookmarkPlus } from 'lucide-react';
 
 interface Idea {
@@ -147,13 +147,13 @@ export function IdeasSection() {
   const currentGenre = selectedProject?.genre || 'Fantasia';
   const projectIdeas = ideas.filter((i) => i.projectId === selectedProjectId);
 
-  const handleGenerateSuggestion = (type: 'names' | 'personalities' | 'worlds' | 'rules') => {
+  const handleGenerateSuggestion = useCallback((type: 'names' | 'personalities' | 'worlds' | 'rules') => {
     const db = SUGGESTIONS_DATABASE[currentGenre] || SUGGESTIONS_DATABASE['Geral'];
     const list = db[type] || SUGGESTIONS_DATABASE['Geral'][type];
     const text = list[Math.floor(Math.random() * list.length)];
     const labels: Record<string, string> = { names: 'Nome', personalities: 'Personalidade', worlds: 'Mundo / Local', rules: 'Regra' };
     setCurrentSuggestion({ type: `Sugestão de ${labels[type]}`, text });
-  };
+  }, [currentGenre]);
 
   const handleSaveSuggestionAsIdea = () => {
     if (!currentSuggestion) return;
@@ -246,7 +246,7 @@ export function IdeasSection() {
               <span className="text-[10px] font-bold uppercase tracking-wider text-[#4b1d3f] dark:text-pink-300 bg-white dark:bg-[#1a1321] px-2.5 py-0.5 rounded-full border border-[#4b1d3f]/20 dark:border-[#382b47]">{currentSuggestion.type}</span>
               <button onClick={handleSaveSuggestionAsIdea} className="text-xs font-bold text-[#4b1d3f] dark:text-pink-300 hover:underline flex items-center gap-1 bg-white dark:bg-[#1a1321] px-3 py-1 rounded-xl border border-[#4b1d3f]/20 dark:border-[#382b47] shadow-xs"><BookmarkPlus size={14} /> Salvar no Bloco</button>
             </div>
-            <p className="text-xs font-serif italic text-stone-800 dark:text-stone-200 leading-relaxed">"{currentSuggestion.text}"</p>
+            <p className="text-xs font-serif italic text-stone-800 dark:text-stone-200 leading-relaxed">&ldquo;{currentSuggestion.text}&rdquo;</p>
           </div>
         )}
       </div>
@@ -261,7 +261,7 @@ export function IdeasSection() {
           {projectIdeas.map((idea) => (
             <div key={idea.id} className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-5 shadow-xs flex flex-col justify-between space-y-4 transition-all">
               <div className="flex justify-between items-start gap-2">
-                <p className="text-xs text-stone-800 dark:text-stone-200 italic font-serif leading-relaxed">"{idea.content}"</p>
+                <p className="text-xs text-stone-800 dark:text-stone-200 italic font-serif leading-relaxed">&ldquo;{idea.content}&rdquo;</p>
                 <div className="flex items-center gap-1 shrink-0">
                   <button onClick={() => handleOpenModal(idea)} className="p-1.5 text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"><Edit2 size={14} /></button>
                   <button onClick={() => setIdeas((prev) => prev.filter((i) => i.id !== idea.id))} className="p-1.5 text-red-400 hover:text-red-500 rounded-lg transition-colors"><Trash2 size={14} /></button>
@@ -278,7 +278,7 @@ export function IdeasSection() {
         {projectIdeas.length === 0 && (
           <div className="text-center py-12 bg-[#fcf8f2] dark:bg-[#1a1321] rounded-3xl border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] text-stone-500 dark:text-stone-400 space-y-2">
             <Lightbulb size={32} className="mx-auto text-stone-400 dark:text-stone-600" />
-            <p className="text-xs font-semibold">Nenhuma ideia anotada ainda. Use o gerador acima ou clique em "Nova Ideia".</p>
+            <p className="text-xs font-semibold">Nenhuma ideia anotada ainda. Use o gerador acima ou clique em &ldquo;Nova Ideia&rdquo;.</p>
           </div>
         )}
       </div>

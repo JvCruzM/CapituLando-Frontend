@@ -165,7 +165,7 @@ export function TimelineSection() {
         {projectEvents.length === 0 && (
           <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-10 text-center text-stone-500 dark:text-stone-400 space-y-2">
             <Clock size={32} className="mx-auto text-stone-400 dark:text-stone-600" />
-            <p className="text-xs font-semibold">Nenhum evento registrado ainda para "{selectedProject?.title}".</p>
+            <p className="text-xs font-semibold">Nenhum evento registrado ainda para &ldquo;{selectedProject?.title}&rdquo;.</p>
           </div>
         )}
       </div>
