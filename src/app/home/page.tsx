@@ -23,9 +23,15 @@ export default function Page() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<string>('painel');
   const [userName, setUserName] = useState<string>('Escritor(a)');
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(false);
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
   
-  const [activeProfileId, setActiveProfileId] = useState<string>('default');
+  const [activeProfileId, setActiveProfileId] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'default';
+    return window.sessionStorage.getItem('capitulando_active_profile') || 'default';
+  });
 
   const [projects, setProjects] = useState<Project[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -52,8 +58,6 @@ export default function Page() {
       const profile = window.sessionStorage.getItem('capitulando_active_profile');
       const customUserName = window.localStorage.getItem('capitulando_user_name');
 
-      if (profile) setActiveProfileId(profile);
-
       if (!token && !userRaw && !customUserName) {
         router.push('/login');
       } else {
@@ -75,7 +79,6 @@ export default function Page() {
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const mq = window.matchMedia('(prefers-color-scheme: dark)');
-      setIsDarkMode(mq.matches);
       const handler = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
       mq.addEventListener('change', handler);
       return () => mq.removeEventListener('change', handler);

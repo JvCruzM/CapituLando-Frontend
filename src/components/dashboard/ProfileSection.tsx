@@ -29,7 +29,35 @@ export function ProfileSection() {
   const [profile, setProfile] = useState<AuthorProfile>(() => {
     if (typeof window === 'undefined') return DEFAULT_PROFILE;
     const saved = localStorage.getItem('capitulando_author_profile');
-    return saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+    let base = saved ? JSON.parse(saved) : DEFAULT_PROFILE;
+    try {
+      const activeProfileId = localStorage.getItem('capitulando_active_profile_id');
+      const customProfiles = JSON.parse(localStorage.getItem('capitulando_custom_profiles') || '[]');
+      const currentUserName = localStorage.getItem('capitulando_user_name') || '';
+      
+      let sessionUserName = '';
+      let sessionUserEmail = '';
+      const userRaw = window.sessionStorage.getItem('capitulando_user');
+      if (userRaw) {
+        const userObj = JSON.parse(userRaw);
+        sessionUserName = userObj.name || userObj.username || '';
+        sessionUserEmail = userObj.email || '';
+      }
+
+      const activeCustomProfile = customProfiles.find((p: { id: string }) => p.id === activeProfileId);
+      const specificAuthorProfile = activeProfileId ? JSON.parse(localStorage.getItem(`capitulando_${activeProfileId}_author_profile`) || 'null') : null;
+
+      const defaultName = specificAuthorProfile?.name || sessionUserName || activeCustomProfile?.name || currentUserName || '';
+      const defaultEmail = specificAuthorProfile?.email || sessionUserEmail || activeCustomProfile?.email || '';
+
+      base = {
+        ...base,
+        name: base.name || defaultName,
+        email: base.email || defaultEmail,
+        penName: base.penName || defaultName,
+      };
+    } catch {}
+    return base;
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -37,53 +65,10 @@ export function ProfileSection() {
   const [genreInput, setGenreInput] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // PREENCHE AUTOMATICAMENTE COM OS DADOS DE LOGIN OU CADASTRO CASO ESTEJAM VAZIOS
-  useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const activeProfileId = localStorage.getItem('capitulando_active_profile_id');
-        const customProfiles = JSON.parse(localStorage.getItem('capitulando_custom_profiles') || '[]');
-        const currentUserName = localStorage.getItem('capitulando_user_name') || '';
-        
-        // Tenta obter dados da sessão (login)
-        let sessionUserName = '';
-        let sessionUserEmail = '';
-        const userRaw = window.sessionStorage.getItem('capitulando_user');
-        if (userRaw) {
-          const userObj = JSON.parse(userRaw);
-          sessionUserName = userObj.name || userObj.username || '';
-          sessionUserEmail = userObj.email || '';
-        }
-
-        const activeCustomProfile = customProfiles.find((p: { id: string }) => p.id === activeProfileId);
-        const specificAuthorProfile = activeProfileId ? JSON.parse(localStorage.getItem(`capitulando_${activeProfileId}_author_profile`) || 'null') : null;
-
-        const defaultName = specificAuthorProfile?.name || sessionUserName || activeCustomProfile?.name || currentUserName || '';
-        const defaultEmail = specificAuthorProfile?.email || sessionUserEmail || activeCustomProfile?.email || '';
-
-        setProfile((prev) => {
-          const updated = {
-            ...prev,
-            name: prev.name || defaultName,
-            email: prev.email || defaultEmail,
-            penName: prev.penName || defaultName,
-          };
-          return updated;
-        });
-      }
-    } catch (e) {
-      console.warn('Erro ao sincronizar com dados de login/registo', e);
-    }
-  }, []);
-
   useEffect(() => {
     if (typeof window !== 'undefined') {
       localStorage.setItem('capitulando_author_profile', JSON.stringify(profile));
     }
-  }, [profile]);
-
-  useEffect(() => {
-    setFormData(profile);
   }, [profile]);
 
   const handleSave = (e: React.FormEvent) => {

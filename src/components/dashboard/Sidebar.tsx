@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
@@ -25,25 +25,21 @@ interface SidebarProps {
 export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
   const router = useRouter();
   
-  const [currentProfileName, setCurrentProfileName] = useState<string>('Escritor(a)');
+  const [currentProfileName] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'Escritor(a)';
+    try {
+      const activeProfileId = localStorage.getItem('capitulando_active_profile_id');
+      const customProfiles = JSON.parse(localStorage.getItem('capitulando_custom_profiles') || '[]');
+      const currentUserName = localStorage.getItem('capitulando_user_name');
+      
+      const activeCustomProfile = customProfiles.find((p: { id: string }) => p.id === activeProfileId);
+      const specificAuthorProfile = activeProfileId ? JSON.parse(localStorage.getItem(`capitulando_${activeProfileId}_author_profile`) || 'null') : null;
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const activeProfileId = localStorage.getItem('capitulando_active_profile_id');
-        const customProfiles = JSON.parse(localStorage.getItem('capitulando_custom_profiles') || '[]');
-        const currentUserName = localStorage.getItem('capitulando_user_name');
-        
-        const activeCustomProfile = customProfiles.find((p: { id: string }) => p.id === activeProfileId);
-        const specificAuthorProfile = activeProfileId ? JSON.parse(localStorage.getItem(`capitulando_${activeProfileId}_author_profile`) || 'null') : null;
-
-        const name = specificAuthorProfile?.name || activeCustomProfile?.name || currentUserName || 'Escritor(a)';
-        setCurrentProfileName(name);
-      } catch (e) {
-        console.warn('Erro ao carregar perfil na sidebar', e);
-      }
+      return specificAuthorProfile?.name || activeCustomProfile?.name || currentUserName || 'Escritor(a)';
+    } catch {
+      return 'Escritor(a)';
     }
-  }, []);
+  });
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {

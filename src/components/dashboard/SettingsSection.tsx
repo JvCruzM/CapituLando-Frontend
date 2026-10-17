@@ -8,8 +8,34 @@ import {
 
 export function SettingsSection() {
   // --- ESTADOS DA CONTA ---
-  const [userName, setUserName] = useState('');
-  const [userEmail, setUserEmail] = useState('');
+  const [userName, setUserName] = useState(() => {
+    if (typeof window === 'undefined') return 'Escritor(a)';
+    try {
+      const userRaw = sessionStorage.getItem('capitulando_user');
+      const currentUserName = localStorage.getItem('capitulando_user_name') || '';
+      if (userRaw) {
+        const userObj = JSON.parse(userRaw);
+        return userObj.name || userObj.username || currentUserName || 'Escritor(a)';
+      }
+      return currentUserName || 'Escritor(a)';
+    } catch {
+      return 'Escritor(a)';
+    }
+  });
+
+  const [userEmail, setUserEmail] = useState(() => {
+    if (typeof window === 'undefined') return 'autor@capitulando.com';
+    try {
+      const userRaw = sessionStorage.getItem('capitulando_user');
+      if (userRaw) {
+        const userObj = JSON.parse(userRaw);
+        return userObj.email || 'autor@capitulando.com';
+      }
+      return 'autor@capitulando.com';
+    } catch {
+      return 'autor@capitulando.com';
+    }
+  });
 
   // --- PREFERÊNCIAS DE INTERFACE ---
   const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('system');
@@ -27,21 +53,6 @@ export function SettingsSection() {
   // CARREGA OS DADOS INICIAIS DO UTILIZADOR E PREFERÊNCIAS
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      // Tenta obter dados da sessão (Login / Registo)
-      const userRaw = sessionStorage.getItem('capitulando_user');
-      const currentUserName = localStorage.getItem('capitulando_user_name') || '';
-
-      if (userRaw) {
-        try {
-          const userObj = JSON.parse(userRaw);
-          setUserName(userObj.name || userObj.username || currentUserName || 'Escritor(a)');
-          setUserEmail(userObj.email || 'autor@capitulando.com');
-        } catch (e) {
-          setUserName(currentUserName || 'Escritor(a)');
-        }
-      } else if (currentUserName) {
-        setUserName(currentUserName);
-      }
 
       // Carrega preferências salvas
       const savedSettings = localStorage.getItem('capitulando_settings');
