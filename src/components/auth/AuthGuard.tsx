@@ -1,12 +1,25 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
 import { apiRequest, type AuthenticatedUser } from "@/lib/api";
 
+const AuthenticatedUserContext = createContext<AuthenticatedUser | null>(null);
+
+export function useAuthenticatedUser() {
+  return useContext(AuthenticatedUserContext);
+}
+
 export function AuthGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [authorized, setAuthorized] = useState(false);
+  const [authenticatedUser, setAuthenticatedUser] =
+    useState<AuthenticatedUser | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -20,8 +33,8 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     }
 
     apiRequest<AuthenticatedUser>("/auth/me")
-      .then(() => {
-        if (active) setAuthorized(true);
+      .then((user) => {
+        if (active) setAuthenticatedUser(user);
       })
       .catch(() => {
         window.sessionStorage.removeItem("capitulando_access_token");
@@ -34,7 +47,7 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     };
   }, [router]);
 
-  if (!authorized) {
+  if (!authenticatedUser) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#F5F0E8] p-6 text-[#4B2858]">
         Verificando sua sessão...
@@ -42,5 +55,9 @@ export function AuthGuard({ children }: { children: ReactNode }) {
     );
   }
 
-  return <>{children}</>;
+  return (
+    <AuthenticatedUserContext.Provider value={authenticatedUser}>
+      {children}
+    </AuthenticatedUserContext.Provider>
+  );
 }
