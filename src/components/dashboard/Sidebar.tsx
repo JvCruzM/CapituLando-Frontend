@@ -13,6 +13,7 @@ import {
   Lightbulb,
   Sparkles,
   User,
+  Settings,
   LogOut,
 } from 'lucide-react';
 
@@ -63,6 +64,7 @@ export function Sidebar({ activeTab, setActiveTab }: SidebarProps) {
     { id: 'metas', label: 'Metas & Desafios', icon: Target },
     { id: 'ideias', label: 'Bloco de Ideias', icon: Lightbulb },
     { id: 'perfil', label: 'Perfil do Autor', icon: User },
+    { id: 'configuracoes', label: 'Configurações', icon: Settings },
   ];
 
   return (

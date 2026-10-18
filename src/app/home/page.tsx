@@ -11,6 +11,7 @@ import { WritingSpace } from '@/components/dashboard/WritingSection';
 import { GoalsSection } from '@/components/dashboard/GoalsSection';
 import { IdeasSection } from '@/components/dashboard/IdeasSection';
 import { ProfileSection } from '@/components/dashboard/ProfileSection';
+import { SettingsSection } from '@/components/dashboard/SettingsSection';
 import { Feather, ArrowRight, ShieldCheck, BookOpen, Target, Lightbulb, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface Project { id: string; title: string; genre?: string; chapters?: { wordCount?: number }[]; drafts?: { wordCount?: number }[]; }
@@ -49,17 +50,22 @@ export default function Page() {
       const token = window.sessionStorage.getItem('capitulando_access_token');
       const userRaw = window.sessionStorage.getItem('capitulando_user');
       const profile = window.sessionStorage.getItem('capitulando_active_profile');
+      const customUserName = window.localStorage.getItem('capitulando_user_name');
 
       if (profile) setActiveProfileId(profile);
 
-      if (!token || !userRaw) {
+      if (!token && !userRaw && !customUserName) {
         router.push('/login');
       } else {
         try {
-          const user = JSON.parse(userRaw);
-          setUserName(user.name || user.username || user.email?.split('@')[0] || 'Escritor(a)');
+          if (userRaw) {
+            const user = JSON.parse(userRaw);
+            setUserName(user.name || user.username || user.email?.split('@')[0] || customUserName || 'Escritor(a)');
+          } else if (customUserName) {
+            setUserName(customUserName);
+          }
         } catch (e) {
-          setUserName('Escritor(a)');
+          setUserName(customUserName || 'Escritor(a)');
         }
         setIsLoading(false);
       }
@@ -67,11 +73,13 @@ export default function Page() {
   }, [router]);
 
   useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    setIsDarkMode(mq.matches);
-    const handler = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-    mq.addEventListener('change', handler);
-    return () => mq.removeEventListener('change', handler);
+    if (typeof window !== 'undefined') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      setIsDarkMode(mq.matches);
+      const handler = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
+      mq.addEventListener('change', handler);
+      return () => mq.removeEventListener('change', handler);
+    }
   }, []);
 
   const totalBooks = projects.length;
@@ -93,6 +101,7 @@ export default function Page() {
       case 'metas': return <GoalsSection key={activeProfileId} />;
       case 'ideias': return <IdeasSection key={activeProfileId} />;
       case 'perfil': return <ProfileSection key={activeProfileId} />;
+      case 'configuracoes': return <SettingsSection key={activeProfileId} />;
       default: return null;
     }
   };
