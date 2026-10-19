@@ -43,6 +43,11 @@ export interface CharacterInput {
   notes: string;
 }
 
+export interface CharacterSaveResponse {
+  id: string;
+  storyId: string;
+}
+
 export interface CharacterRelationship {
   id: string;
   storyId: string;
@@ -66,14 +71,14 @@ export function loadCharacters() {
 }
 
 export function createCharacter(input: CharacterInput) {
-  return apiRequest<CharacterRecord>("/characters", {
+  return apiRequest<CharacterSaveResponse>("/characters", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function updateCharacter(id: string, input: CharacterInput) {
-  return apiRequest<CharacterRecord>(`/characters/${id}`, {
+  return apiRequest<CharacterSaveResponse>(`/characters/${id}`, {
     method: "PUT",
     body: JSON.stringify(input),
   });

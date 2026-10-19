@@ -123,7 +123,7 @@ const optimizeCharacterImage = async (file: File) => {
 
   try {
     const bitmap = await createImageBitmap(file);
-    const maxDimension = 1280;
+    const maxDimension = 768;
     const scale = Math.min(
       1,
       maxDimension / Math.max(bitmap.width, bitmap.height),
@@ -137,7 +137,7 @@ const optimizeCharacterImage = async (file: File) => {
     bitmap.close();
 
     const optimized = await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob(resolve, "image/webp", 0.82),
+      canvas.toBlob(resolve, "image/webp", 0.75),
     );
     return optimized ? readAsDataUrl(optimized) : readAsDataUrl(file);
   } catch {
@@ -336,7 +336,27 @@ export function CharactersSection() {
       const saved = editingId
         ? await updateCharacter(editingId, input)
         : await createCharacter(input);
-      const mapped = toCharacter(saved);
+      const mapped: Character = {
+        id: saved.id,
+        projectId: saved.storyId,
+        name: input.name,
+        role: input.role as Character["role"],
+        age: input.age,
+        height: input.height,
+        weight: input.weight,
+        zodiac: input.zodiac,
+        bloodType: input.bloodType,
+        mbti: input.mbti,
+        imageUrl: input.characterImage,
+        imageFit: input.imageFit,
+        imagePosition: input.imagePosition,
+        appearance: splitValues(input.appearance),
+        likes: splitValues(input.likes),
+        dislikes: splitValues(input.dislikes),
+        drinks: splitValues(input.drinks),
+        motto: input.motto,
+        shortNote: input.notes,
+      };
       setCharacters((previous) =>
         editingId
           ? previous.map((character) =>
