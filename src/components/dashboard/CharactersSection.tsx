@@ -101,6 +101,50 @@ const toCharacter = (record: CharacterRecord): Character => ({
   shortNote: record.notes || "",
 });
 
+const readAsDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () =>
+      typeof reader.result === "string"
+        ? resolve(reader.result)
+        : reject(new Error("Não foi possível ler a imagem."));
+    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+    reader.readAsDataURL(blob);
+  });
+
+const optimizeCharacterImage = async (file: File) => {
+  if (
+    file.size <= 256 * 1024 ||
+    file.type === "image/gif" ||
+    file.type === "image/svg+xml"
+  ) {
+    return readAsDataUrl(file);
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    const maxDimension = 1280;
+    const scale = Math.min(
+      1,
+      maxDimension / Math.max(bitmap.width, bitmap.height),
+    );
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Não foi possível processar a imagem.");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+
+    const optimized = await new Promise<Blob | null>((resolve) =>
+      canvas.toBlob(resolve, "image/webp", 0.82),
+    );
+    return optimized ? readAsDataUrl(optimized) : readAsDataUrl(file);
+  } catch {
+    return readAsDataUrl(file);
+  }
+};
+
 export function CharactersSection() {
   const [activeTab, setActiveTab] = useState<"characters" | "relationships">(
     "characters",
@@ -163,6 +207,7 @@ export function CharactersSection() {
   const [editingRelId, setEditingRelId] = useState<string | null>(null);
   const [isSavingCharacter, setIsSavingCharacter] = useState(false);
   const [isSavingRelationship, setIsSavingRelationship] = useState(false);
+  const [isProcessingImage, setIsProcessingImage] = useState(false);
   const characterSaveInFlight = useRef(false);
   const relationshipSaveInFlight = useRef(false);
 
@@ -223,19 +268,32 @@ export function CharactersSection() {
     setIsModalOpen(true);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () =>
-        setFormData((prev) => ({ ...prev, imageUrl: reader.result as string }));
-      reader.readAsDataURL(file);
+    if (!file) return;
+    setIsProcessingImage(true);
+    setError("");
+    try {
+      const imageUrl = await optimizeCharacterImage(file);
+      setFormData((previous) => ({ ...previous, imageUrl }));
+    } catch (imageError) {
+      setError(
+        imageError instanceof Error
+          ? imageError.message
+          : "Não foi possível processar a imagem.",
+      );
+    } finally {
+      setIsProcessingImage(false);
     }
   };
 
   const handleSaveChar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (characterSaveInFlight.current) return;
+    if (isProcessingImage) {
+      setError("Aguarde o processamento da imagem antes de salvar.");
+      return;
+    }
     if (!selectedProjectId) {
       setError(
         "Crie ou selecione uma história antes de adicionar personagens.",
@@ -774,7 +832,7 @@ export function CharactersSection() {
               </h3>
               <button
                 type="button"
-                disabled={isSavingCharacter}
+                disabled={isSavingCharacter || isProcessingImage}
                 onClick={() => setIsModalOpen(false)}
               >
                 <X size={16} />
@@ -911,8 +969,14 @@ export function CharactersSection() {
                     type="file"
                     accept="image/*"
                     onChange={handleFileChange}
+                    disabled={isProcessingImage || isSavingCharacter}
                     className="w-full text-xs file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#4b1d3f] file:text-white file:cursor-pointer"
                   />
+                )}
+                {isProcessingImage && (
+                  <p className="text-[10px] text-stone-500" aria-live="polite">
+                    Preparando imagem para envio...
+                  </p>
                 )}
 
                 <div className="grid grid-cols-2 gap-2 pt-1">
@@ -997,7 +1061,7 @@ export function CharactersSection() {
               <div className="flex justify-end gap-2 pt-3 border-t border-[#4b1d3f]/20 dark:border-[#382b47]">
                 <button
                   type="button"
-                  disabled={isSavingCharacter}
+                  disabled={isSavingCharacter || isProcessingImage}
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 bg-stone-200 dark:bg-stone-800 rounded-xl font-semibold"
                 >
@@ -1005,10 +1069,14 @@ export function CharactersSection() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSavingCharacter}
+                  disabled={isSavingCharacter || isProcessingImage}
                   className="px-4 py-2 bg-[#4b1d3f] dark:bg-pink-800 text-white rounded-xl font-bold"
                 >
-                  {isSavingCharacter ? "Salvando..." : "Guardar"}
+                  {isProcessingImage
+                    ? "Preparando imagem..."
+                    : isSavingCharacter
+                      ? "Salvando..."
+                      : "Guardar"}
                 </button>
               </div>
             </form>
