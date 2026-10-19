@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { loadWritingProjects, type WritingProject } from "@/lib/writing-api";
 import { useAuthenticatedUser } from "@/components/auth/AuthGuard";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { CharactersSection } from "@/components/dashboard/CharactersSection";
@@ -23,13 +24,6 @@ import {
   CheckCircle2,
 } from "lucide-react";
 
-interface Project {
-  id: string;
-  title: string;
-  genre?: string;
-  chapters?: { wordCount?: number }[];
-  drafts?: { wordCount?: number }[];
-}
 interface Goal {
   id: string;
   completed: boolean;
@@ -51,6 +45,7 @@ export default function Page() {
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   });
 
+  const [projects, setProjects] = useState<WritingProject[]>([]);
   const [activeProfileId] = useState<string>(() => {
     if (typeof window === "undefined") return "default";
     return (
@@ -58,11 +53,11 @@ export default function Page() {
     );
   });
 
-  const [projects] = useState<Project[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_projects");
-    return saved ? JSON.parse(saved) : [];
-  });
+  useEffect(() => {
+    loadWritingProjects()
+      .then(setProjects)
+      .catch(() => setProjects([]));
+  }, []);
 
   const [goals] = useState<Goal[]>(() => {
     if (typeof window === "undefined") return [];
