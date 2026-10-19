@@ -5,6 +5,18 @@ import Image from "next/image";
 import React, { useState, useEffect } from "react";
 import { loadWritingProjects } from "@/lib/writing-api";
 import {
+  createCharacter,
+  createCharacterRelationship,
+  deleteCharacter,
+  deleteCharacterRelationship,
+  loadCharacterRelationships,
+  loadCharacters,
+  updateCharacter,
+  updateCharacterRelationship,
+  type CharacterInput,
+  type CharacterRecord,
+} from "@/lib/characters-api";
+import {
   Search,
   Plus,
   Edit2,
@@ -59,6 +71,36 @@ interface ProjectMinimal {
   title: string;
 }
 
+const splitValues = (value?: string | null) =>
+  value
+    ? value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
+    : [];
+
+const toCharacter = (record: CharacterRecord): Character => ({
+  id: record.id,
+  projectId: record.story.id,
+  name: record.name,
+  role: (record.role || "Secundário") as Character["role"],
+  age: record.age ?? 0,
+  height: record.height || "",
+  weight: record.weight || "",
+  zodiac: record.zodiac || "",
+  bloodType: record.bloodType || "",
+  mbti: record.mbti || "",
+  imageUrl: record.characterImage || undefined,
+  imageFit: record.imageFit || "cover",
+  imagePosition: record.imagePosition || "center",
+  appearance: splitValues(record.appearance),
+  likes: splitValues(record.likes),
+  dislikes: splitValues(record.dislikes),
+  drinks: splitValues(record.drinks),
+  motto: record.motto || "",
+  shortNote: record.notes || "",
+});
+
 export function CharactersSection() {
   const [activeTab, setActiveTab] = useState<"characters" | "relationships">(
     "characters",
@@ -78,37 +120,42 @@ export function CharactersSection() {
       .catch(() => setProjects([]));
   }, []);
 
-  // Gestão nativa de localStorage para personagens
-  const [characters, setCharacters] = useState<Character[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_characters");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  // Gestão nativa de localStorage para relacionamentos
-  const [relationships, setRelationships] = useState<Relationship[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_relationships");
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [relationships, setRelationships] = useState<Relationship[]>([]);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "capitulando_characters",
-        JSON.stringify(characters),
-      );
-    }
-  }, [characters]);
+    loadCharacters()
+      .then((loaded) => setCharacters(loaded.map(toCharacter)))
+      .catch(() => setError("Não foi possível carregar os personagens."));
+  }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "capitulando_relationships",
-        JSON.stringify(relationships),
-      );
-    }
-  }, [relationships]);
+    if (!selectedProjectId) return;
+
+    let active = true;
+    loadCharacterRelationships(selectedProjectId)
+      .then((loaded) => {
+        if (active) {
+          setRelationships(
+            loaded.map((relationship) => ({
+              id: relationship.id,
+              projectId: relationship.storyId,
+              character1Id: relationship.sourceCharacterId,
+              character2Id: relationship.targetCharacterId,
+              type: relationship.type,
+              description: relationship.description || "",
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        if (active) setError("Não foi possível carregar os relacionamentos.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedProjectId]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -181,41 +228,75 @@ export function CharactersSection() {
     }
   };
 
-  const handleSaveChar = (e: React.FormEvent) => {
+  const handleSaveChar = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProjectId) {
+      setError(
+        "Crie ou selecione uma história antes de adicionar personagens.",
+      );
+      return;
+    }
     const splitArr = (str: string) =>
       str
-        ? str
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : [];
-    const formatted: Character = {
-      ...formData,
-      id: editingId || Date.now().toString(),
-      projectId: selectedProjectId,
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+    const input: CharacterInput = {
+      story: { id: selectedProjectId },
       name: formData.name || "Sem nome",
+      role: formData.role,
       age: Number(formData.age) || 0,
-      imageUrl: formData.imageUrl || undefined,
-      appearance: splitArr(formData.appearance),
-      likes: splitArr(formData.likes),
-      dislikes: splitArr(formData.dislikes),
-      drinks: splitArr(formData.drinks),
+      height: formData.height,
+      weight: formData.weight,
+      zodiac: formData.zodiac,
+      bloodType: formData.bloodType,
+      mbti: formData.mbti,
+      characterImage: formData.imageUrl || undefined,
+      imageFit: formData.imageFit,
+      imagePosition: formData.imagePosition,
+      appearance: splitArr(formData.appearance).join(", "),
+      likes: splitArr(formData.likes).join(", "),
+      dislikes: splitArr(formData.dislikes).join(", "),
+      drinks: splitArr(formData.drinks).join(", "),
+      motto: formData.motto,
+      notes: formData.shortNote,
     };
-    setCharacters((prev) =>
-      editingId
-        ? prev.map((c) => (c.id === editingId ? formatted : c))
-        : [formatted, ...prev],
-    );
-    setIsModalOpen(false);
+    try {
+      const saved = editingId
+        ? await updateCharacter(editingId, input)
+        : await createCharacter(input);
+      const mapped = toCharacter(saved);
+      setCharacters((previous) =>
+        editingId
+          ? previous.map((character) =>
+              character.id === editingId ? mapped : character,
+            )
+          : [mapped, ...previous],
+      );
+      setError("");
+      setIsModalOpen(false);
+    } catch {
+      setError("Não foi possível salvar o personagem. Tente novamente.");
+    }
   };
 
-  const handleDeleteChar = (id: string) => {
-    if (confirm("Eliminar esta ficha?")) {
-      setCharacters((prev) => prev.filter((c) => c.id !== id));
-      setRelationships((prev) =>
-        prev.filter((r) => r.character1Id !== id && r.character2Id !== id),
+  const handleDeleteChar = async (id: string) => {
+    if (!confirm("Eliminar esta ficha?")) return;
+    try {
+      await deleteCharacter(id);
+      setCharacters((previous) =>
+        previous.filter((character) => character.id !== id),
       );
+      setRelationships((previous) =>
+        previous.filter(
+          (relationship) =>
+            relationship.character1Id !== id &&
+            relationship.character2Id !== id,
+        ),
+      );
+      setError("");
+    } catch {
+      setError("Não foi possível excluir o personagem.");
     }
   };
 
@@ -240,21 +321,69 @@ export function CharactersSection() {
     setIsRelModalOpen(true);
   };
 
-  const handleSaveRel = (e: React.FormEvent) => {
+  const handleSaveRel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!relFormData.character1Id || !relFormData.character2Id) return;
-    const newRel: Relationship = {
-      ...relFormData,
-      id: editingRelId || Date.now().toString(),
-      projectId: selectedProjectId,
+    if (
+      !selectedProjectId ||
+      !relFormData.character1Id ||
+      !relFormData.character2Id
+    )
+      return;
+    if (relFormData.character1Id === relFormData.character2Id) {
+      setError(
+        "Escolha dois personagens diferentes para criar o relacionamento.",
+      );
+      return;
+    }
+    const input = {
+      sourceCharacterId: relFormData.character1Id,
+      targetCharacterId: relFormData.character2Id,
       type: relFormData.type || "Indefinido",
+      description: relFormData.description,
     };
-    setRelationships((prev) =>
-      editingRelId
-        ? prev.map((r) => (r.id === editingRelId ? newRel : r))
-        : [newRel, ...prev],
-    );
-    setIsRelModalOpen(false);
+    try {
+      const saved = editingRelId
+        ? await updateCharacterRelationship(
+            selectedProjectId,
+            editingRelId,
+            input,
+          )
+        : await createCharacterRelationship(selectedProjectId, input);
+      const mapped: Relationship = {
+        id: saved.id,
+        projectId: saved.storyId,
+        character1Id: saved.sourceCharacterId,
+        character2Id: saved.targetCharacterId,
+        type: saved.type,
+        description: saved.description || "",
+      };
+      setRelationships((previous) =>
+        editingRelId
+          ? previous.map((relationship) =>
+              relationship.id === editingRelId ? mapped : relationship,
+            )
+          : [mapped, ...previous],
+      );
+      setError("");
+      setIsRelModalOpen(false);
+    } catch {
+      setError("Não foi possível salvar o relacionamento.");
+    }
+  };
+
+  const handleDeleteRel = async (relationship: Relationship) => {
+    try {
+      await deleteCharacterRelationship(
+        relationship.projectId,
+        relationship.id,
+      );
+      setRelationships((previous) =>
+        previous.filter((item) => item.id !== relationship.id),
+      );
+      setError("");
+    } catch {
+      setError("Não foi possível excluir o relacionamento.");
+    }
   };
 
   const filteredChars = currentChars.filter(
@@ -296,6 +425,15 @@ export function CharactersSection() {
           </select>
         </div>
       </div>
+
+      {error && (
+        <p
+          role="alert"
+          className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800"
+        >
+          {error}
+        </p>
+      )}
 
       {activeTab === "characters" && (
         <>
@@ -519,11 +657,7 @@ export function CharactersSection() {
                       <Edit2 size={13} />
                     </button>
                     <button
-                      onClick={() =>
-                        setRelationships((prev) =>
-                          prev.filter((r) => r.id !== rel.id),
-                        )
-                      }
+                      onClick={() => handleDeleteRel(rel)}
                       className="p-1 text-red-400 hover:text-red-600"
                     >
                       <Trash2 size={13} />
