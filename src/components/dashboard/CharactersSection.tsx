@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { loadWritingProjects } from "@/lib/writing-api";
 import {
   createCharacter,
@@ -161,6 +161,10 @@ export function CharactersSection() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isRelModalOpen, setIsRelModalOpen] = useState(false);
   const [editingRelId, setEditingRelId] = useState<string | null>(null);
+  const [isSavingCharacter, setIsSavingCharacter] = useState(false);
+  const [isSavingRelationship, setIsSavingRelationship] = useState(false);
+  const characterSaveInFlight = useRef(false);
+  const relationshipSaveInFlight = useRef(false);
 
   const initialCharData = {
     name: "",
@@ -198,6 +202,7 @@ export function CharactersSection() {
   );
 
   const handleOpenCharModal = (char?: Character) => {
+    setError("");
     if (char) {
       setEditingId(char.id);
       setFormData({
@@ -230,12 +235,20 @@ export function CharactersSection() {
 
   const handleSaveChar = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (characterSaveInFlight.current) return;
     if (!selectedProjectId) {
       setError(
         "Crie ou selecione uma história antes de adicionar personagens.",
       );
       return;
     }
+    if (!formData.name.trim()) {
+      setError("Informe o nome do personagem.");
+      return;
+    }
+    characterSaveInFlight.current = true;
+    setIsSavingCharacter(true);
+    setError("");
     const splitArr = (str: string) =>
       str
         .split(",")
@@ -243,7 +256,7 @@ export function CharactersSection() {
         .filter(Boolean);
     const input: CharacterInput = {
       story: { id: selectedProjectId },
-      name: formData.name || "Sem nome",
+      name: formData.name.trim(),
       role: formData.role,
       age: Number(formData.age) || 0,
       height: formData.height,
@@ -275,8 +288,15 @@ export function CharactersSection() {
       );
       setError("");
       setIsModalOpen(false);
-    } catch {
-      setError("Não foi possível salvar o personagem. Tente novamente.");
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível salvar o personagem. Tente novamente.",
+      );
+    } finally {
+      characterSaveInFlight.current = false;
+      setIsSavingCharacter(false);
     }
   };
 
@@ -301,6 +321,7 @@ export function CharactersSection() {
   };
 
   const handleOpenRelModal = (rel?: Relationship) => {
+    setError("");
     if (rel) {
       setEditingRelId(rel.id);
       setRelFormData({
@@ -323,22 +344,32 @@ export function CharactersSection() {
 
   const handleSaveRel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (
-      !selectedProjectId ||
-      !relFormData.character1Id ||
-      !relFormData.character2Id
-    )
+    if (relationshipSaveInFlight.current) return;
+    if (!selectedProjectId) {
+      setError("Selecione uma história antes de adicionar um relacionamento.");
       return;
+    }
+    if (!relFormData.character1Id || !relFormData.character2Id) {
+      setError("Selecione os dois personagens do relacionamento.");
+      return;
+    }
+    if (!relFormData.type.trim()) {
+      setError("Informe o tipo de relacionamento.");
+      return;
+    }
     if (relFormData.character1Id === relFormData.character2Id) {
       setError(
         "Escolha dois personagens diferentes para criar o relacionamento.",
       );
       return;
     }
+    relationshipSaveInFlight.current = true;
+    setIsSavingRelationship(true);
+    setError("");
     const input = {
       sourceCharacterId: relFormData.character1Id,
       targetCharacterId: relFormData.character2Id,
-      type: relFormData.type || "Indefinido",
+      type: relFormData.type.trim(),
       description: relFormData.description,
     };
     try {
@@ -366,8 +397,15 @@ export function CharactersSection() {
       );
       setError("");
       setIsRelModalOpen(false);
-    } catch {
-      setError("Não foi possível salvar o relacionamento.");
+    } catch (saveError) {
+      setError(
+        saveError instanceof Error
+          ? saveError.message
+          : "Não foi possível salvar o relacionamento.",
+      );
+    } finally {
+      relationshipSaveInFlight.current = false;
+      setIsSavingRelationship(false);
     }
   };
 
@@ -734,10 +772,24 @@ export function CharactersSection() {
               <h3 className="font-bold text-sm font-serif">
                 {editingId ? "Editar Ficha" : "Criar Nova Ficha"}
               </h3>
-              <button onClick={() => setIsModalOpen(false)}>
+              <button
+                type="button"
+                disabled={isSavingCharacter}
+                onClick={() => setIsModalOpen(false)}
+              >
                 <X size={16} />
               </button>
             </div>
+
+            {error && (
+              <p
+                role="alert"
+                aria-live="polite"
+                className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800"
+              >
+                {error}
+              </p>
+            )}
 
             <form onSubmit={handleSaveChar} className="space-y-2.5">
               <div className="grid grid-cols-2 gap-2">
@@ -945,6 +997,7 @@ export function CharactersSection() {
               <div className="flex justify-end gap-2 pt-3 border-t border-[#4b1d3f]/20 dark:border-[#382b47]">
                 <button
                   type="button"
+                  disabled={isSavingCharacter}
                   onClick={() => setIsModalOpen(false)}
                   className="px-4 py-2 bg-stone-200 dark:bg-stone-800 rounded-xl font-semibold"
                 >
@@ -952,9 +1005,10 @@ export function CharactersSection() {
                 </button>
                 <button
                   type="submit"
+                  disabled={isSavingCharacter}
                   className="px-4 py-2 bg-[#4b1d3f] dark:bg-pink-800 text-white rounded-xl font-bold"
                 >
-                  Guardar
+                  {isSavingCharacter ? "Salvando..." : "Guardar"}
                 </button>
               </div>
             </form>
@@ -970,10 +1024,23 @@ export function CharactersSection() {
               <h3 className="font-bold">
                 {editingRelId ? "Editar Relacionamento" : "Novo Relacionamento"}
               </h3>
-              <button onClick={() => setIsRelModalOpen(false)}>
+              <button
+                type="button"
+                disabled={isSavingRelationship}
+                onClick={() => setIsRelModalOpen(false)}
+              >
                 <X size={16} />
               </button>
             </div>
+            {error && (
+              <p
+                role="alert"
+                aria-live="polite"
+                className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs text-red-800"
+              >
+                {error}
+              </p>
+            )}
             <form onSubmit={handleSaveRel} className="space-y-2.5">
               <select
                 value={relFormData.character1Id}
@@ -1032,6 +1099,7 @@ export function CharactersSection() {
               <div className="flex justify-end gap-2 pt-3 border-t border-[#4b1d3f]/20 dark:border-[#382b47]">
                 <button
                   type="button"
+                  disabled={isSavingRelationship}
                   onClick={() => setIsRelModalOpen(false)}
                   className="px-4 py-2 bg-stone-200 dark:bg-stone-800 rounded-xl font-semibold"
                 >
@@ -1039,9 +1107,10 @@ export function CharactersSection() {
                 </button>
                 <button
                   type="submit"
+                  disabled={isSavingRelationship}
                   className="px-4 py-2 bg-[#4b1d3f] dark:bg-pink-800 text-white rounded-xl font-bold"
                 >
-                  Guardar
+                  {isSavingRelationship ? "Salvando..." : "Guardar"}
                 </button>
               </div>
             </form>
