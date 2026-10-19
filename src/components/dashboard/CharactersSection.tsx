@@ -113,35 +113,63 @@ const readAsDataUrl = (blob: Blob) =>
   });
 
 const optimizeCharacterImage = async (file: File) => {
-  if (
-    file.size <= 256 * 1024 ||
-    file.type === "image/gif" ||
-    file.type === "image/svg+xml"
-  ) {
+  if (file.type === "image/gif" || file.type === "image/svg+xml") {
     return readAsDataUrl(file);
   }
 
+  const loadImage = async () => {
+    if (typeof createImageBitmap === "function") {
+      try {
+        return await createImageBitmap(file);
+      } catch {}
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const element = document.createElement("img");
+        element.onload = () => resolve(element);
+        element.onerror = () =>
+          reject(new Error("Não foi possível abrir a imagem."));
+        element.src = objectUrl;
+      });
+      return image;
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  };
+
   try {
-    const bitmap = await createImageBitmap(file);
+    const image = await loadImage();
     const maxDimension = 768;
     const scale = Math.min(
       1,
-      maxDimension / Math.max(bitmap.width, bitmap.height),
+      maxDimension / Math.max(image.width, image.height),
     );
     const canvas = document.createElement("canvas");
-    canvas.width = Math.round(bitmap.width * scale);
-    canvas.height = Math.round(bitmap.height * scale);
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
     const context = canvas.getContext("2d");
     if (!context) throw new Error("Não foi possível processar a imagem.");
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-    bitmap.close();
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    if ("close" in image && typeof image.close === "function") image.close();
 
     const optimized = await new Promise<Blob | null>((resolve) =>
       canvas.toBlob(resolve, "image/webp", 0.75),
     );
-    return optimized ? readAsDataUrl(optimized) : readAsDataUrl(file);
-  } catch {
-    return readAsDataUrl(file);
+    if (!optimized) throw new Error("Não foi possível compactar a imagem.");
+    if (file.size > 256 * 1024 && optimized.size >= file.size) {
+      throw new Error(
+        "Esta imagem não pôde ser compactada. Tente outra imagem ou use um link.",
+      );
+    }
+    return readAsDataUrl(optimized);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("compactada"))
+      throw error;
+    throw new Error(
+      "Não foi possível processar a imagem. Tente outro arquivo ou use um link.",
+    );
   }
 };
 
@@ -976,9 +1004,18 @@ export function CharactersSection() {
                 </div>
                 {imgInputType === "link" ? (
                   <input
+                    key="character-image-url"
                     type="url"
-                    placeholder="URL da imagem..."
-                    value={formData.imageUrl}
+                    placeholder={
+                      (formData.imageUrl ?? "").startsWith("data:")
+                        ? "Imagem anexada pela galeria"
+                        : "URL da imagem..."
+                    }
+                    value={
+                      (formData.imageUrl ?? "").startsWith("data:")
+                        ? ""
+                        : (formData.imageUrl ?? "")
+                    }
                     onChange={(e) =>
                       setFormData({ ...formData, imageUrl: e.target.value })
                     }
@@ -986,6 +1023,7 @@ export function CharactersSection() {
                   />
                 ) : (
                   <input
+                    key="character-image-file"
                     type="file"
                     accept="image/*"
                     onChange={handleFileChange}
