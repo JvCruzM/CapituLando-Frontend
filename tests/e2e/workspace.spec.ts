@@ -218,7 +218,7 @@ test("ideias, universo, timeline, perfil e relacionamentos persistem após recar
     .click();
   await expect(page.locator("main select").first()).toHaveValue(story.id);
   await page
-    .getByRole("button", { name: "Novo Local / Regra", exact: true })
+    .getByRole("button", { name: "Nova anotação", exact: true })
     .click();
   await page.getByLabel("Nome", { exact: true }).fill("Cidade persistida");
   await page.locator("form textarea").fill("A cidade da história");
@@ -1168,4 +1168,361 @@ test("tema público respeita a preferência da conta ao entrar e mantém a escol
     .selectOption("dark");
   await login(page, email);
   await expect(page.locator("html")).not.toHaveClass(/dark/);
+});
+
+test("enciclopédia do mundo integra cadastros, vínculos, timeline, backup e isolamento", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  page.setDefaultTimeout(15_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const email = await account(request);
+  const auth = await (
+    await request.post(`${api}/auth/login`, { data: { email, password } })
+  ).json();
+  const headers = { Authorization: `Bearer ${auth.accessToken}` };
+  const story = await (
+    await request.post(`${api}/stories`, {
+      headers,
+      data: { title: "Mundo de Aurora" },
+    })
+  ).json();
+  const otherStory = await (
+    await request.post(`${api}/stories`, {
+      headers,
+      data: { title: "Outro universo" },
+    })
+  ).json();
+  const chapter = await (
+    await request.post(`${api}/stories/${story.id}/chapters`, {
+      headers,
+      data: { title: "A primeira viagem", status: "IN_REVIEW" },
+    })
+  ).json();
+  expect(
+    (
+      await request.post(`${api}/races`, {
+        headers,
+        data: { name: "Raça de outro livro", story: { id: otherStory.id } },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  expect(
+    (
+      await request.put(`${api}/workspace/concepts`, {
+        headers,
+        data: {
+          revision: 0,
+          value: [
+            {
+              id: "old-note",
+              projectId: story.id,
+              title: "Nota antiga",
+              category: "Lore / História",
+              description: "Continua disponível",
+            },
+          ],
+        },
+      })
+    ).ok(),
+  ).toBeTruthy();
+  await login(page, email);
+  async function universe(tab: string) {
+    await page
+      .getByRole("button", { name: "Universo / Mundo", exact: true })
+      .click();
+    await page
+      .getByRole("combobox", { name: "Livro do universo", exact: true })
+      .selectOption({ label: "Mundo de Aurora" });
+    await page.getByRole("tab", { name: tab, exact: true }).click();
+  }
+  async function create(
+    action: string,
+    fields: Record<string, string>,
+    selections: Record<string, string> = {},
+  ) {
+    await expect(
+      page.getByRole("button", { name: action, exact: true }),
+    ).toBeEnabled();
+    await page.getByRole("button", { name: action, exact: true }).click();
+    const modal = page.getByRole("dialog", { name: action, exact: true });
+    for (const [label, value] of Object.entries(fields))
+      await modal.getByLabel(label).fill(value);
+    for (const [label, value] of Object.entries(selections))
+      await modal.getByLabel(label).selectOption({ label: value });
+    await modal
+      .getByRole("button", { name: "Salvar registro", exact: true })
+      .click();
+    await expect(modal).not.toBeVisible();
+  }
+  await universe("Anotações");
+  await expect(
+    page.getByRole("heading", { name: "Nota antiga", exact: true }),
+  ).toBeVisible();
+  await universe("Raças");
+  await create("Nova raça", {
+    Nome: "Elfos de Aurora",
+    Descrição: "Habitantes da floresta",
+    Cultura: "Tradição oral",
+    Habitat: "Florestas",
+  });
+  await expect(
+    page.getByRole("heading", { name: "Elfos de Aurora", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Editar Elfos de Aurora", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Editar raça", exact: true })
+    .getByLabel("Cultura")
+    .fill("Tradição oral e música");
+  await page
+    .getByRole("button", { name: "Salvar registro", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("button", { name: "Personagens", exact: true }).click();
+  await page.locator("main select").first().selectOption(story.id);
+  await page.getByRole("button", { name: "Criar Ficha", exact: true }).click();
+  await page.getByPlaceholder("Nome", { exact: true }).fill("Clara");
+  await expect(
+    page
+      .getByLabel("Raça")
+      .locator("option", { hasText: "Raça de outro livro" }),
+  ).toHaveCount(0);
+  await page.getByLabel("Raça").selectOption({ label: "Elfos de Aurora" });
+  await page.getByRole("button", { name: "Guardar", exact: true }).click();
+  await expect(
+    page.getByText("Raça: Elfos de Aurora", { exact: true }),
+  ).toBeVisible();
+  await universe("Criaturas");
+  await create(
+    "Nova criatura",
+    { Nome: "Guardião", Comportamento: "Protege o bosque" },
+    { Raça: "Elfos de Aurora" },
+  );
+  await page
+    .getByRole("button", { name: "Editar Guardião", exact: true })
+    .click();
+  await page
+    .getByRole("dialog", { name: "Editar criatura", exact: true })
+    .getByLabel("Raça")
+    .selectOption("");
+  await page
+    .getByRole("button", { name: "Salvar registro", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const creatures = await (
+    await request.get(`${api}/creatures`, { headers })
+  ).json();
+  expect(
+    creatures.find((row: { name: string }) => row.name === "Guardião").race,
+  ).toBeNull();
+  await universe("Itens");
+  await create("Novo item", {
+    Nome: "Mapa antigo",
+    Tipo: "Artefato",
+    Origem: "Biblioteca de Aurora",
+  });
+  await universe("Locais");
+  await create("Novo local", { Nome: "Reino de Aurora", Clima: "Temperado" });
+  await create(
+    "Novo local",
+    { Nome: "Cidade das folhas", Região: "Norte" },
+    { "Local ao qual pertence": "Reino de Aurora" },
+  );
+  await page
+    .getByRole("button", { name: "Editar Reino de Aurora", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByLabel("Local ao qual pertence")
+      .locator("option", { hasText: "Cidade das folhas" }),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Cancelar", exact: true }).click();
+  await universe("Organizações");
+  await create(
+    "Nova organização",
+    { Nome: "Guardiões do bosque", Tipo: "Ordem" },
+    { Sede: "Cidade das folhas" },
+  );
+  await page
+    .getByRole("button", {
+      name: "Ver detalhes de Guardiões do bosque",
+      exact: true,
+    })
+    .click();
+  await create(
+    "Adicionar membro",
+    {
+      "Papel na organização": "Exploradora",
+      "Data ou época de entrada": "Ano 12",
+    },
+    { Personagem: "Clara" },
+  );
+  await expect(
+    page
+      .getByRole("dialog", { name: "Guardiões do bosque", exact: true })
+      .getByRole("heading", { name: "Clara", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Fechar", exact: true }).click();
+  await universe("Regras e lore");
+  await create("Nova regra", {
+    Título: "Magia das folhas",
+    Categoria: "Regra de Magia",
+    Descrição: "A magia nasce da memória das árvores.",
+  });
+  await page
+    .getByRole("button", { name: "Timeline / Idade", exact: true })
+    .click();
+  await page.locator("main select").first().selectOption(story.id);
+  await page
+    .getByRole("tab", { name: "Eventos vinculados", exact: true })
+    .click();
+  await create(
+    "Novo evento vinculado",
+    {
+      Título: "A chegada de Clara",
+      "Data ou época": "Ano 12",
+      "Ordem na cronologia": "1",
+    },
+    {
+      "Local do evento": "Cidade das folhas",
+      "Capítulo relacionado": "A primeira viagem",
+    },
+  );
+  await page
+    .getByRole("button", {
+      name: "Ver detalhes de A chegada de Clara",
+      exact: true,
+    })
+    .click();
+  await create("Adicionar participante", {}, { Personagem: "Clara" });
+  await expect(
+    page
+      .getByRole("dialog", { name: "A chegada de Clara", exact: true })
+      .getByRole("heading", { name: "Clara", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Fechar", exact: true }).click();
+  await page.reload();
+  await universe("Raças");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Excluir Elfos de Aurora", exact: true })
+    .click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "vínculo em uso" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Elfos de Aurora", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("combobox", { name: "Livro do universo", exact: true })
+    .selectOption(otherStory.id);
+  await expect(
+    page.getByRole("heading", { name: "Raça de outro livro", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Elfos de Aurora", exact: true }),
+  ).toHaveCount(0);
+  const backup = await (await request.get(`${api}/backup`, { headers })).json();
+  for (const kind of [
+    "Race",
+    "Creature",
+    "Item",
+    "Location",
+    "Organization",
+    "WorldRule",
+    "Event",
+    "CharacterOrganization",
+    "EventCharacter",
+  ])
+    expect(backup.records[kind].length).toBeGreaterThan(0);
+  expect(backup.records.Event[0].chapter.id).toBe(chapter.id);
+  expect(
+    (await request.post(`${api}/backup`, { headers, data: backup })).ok(),
+  ).toBeTruthy();
+  await page.reload();
+  await universe("Organizações");
+  await page
+    .getByRole("button", {
+      name: "Ver detalhes de Guardiões do bosque",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Guardiões do bosque", exact: true })
+      .getByRole("heading", { name: "Clara", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Fechar", exact: true }).click();
+  await universe("Itens");
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Excluir Mapa antigo", exact: true })
+    .click();
+  await expect(
+    page.getByRole("heading", { name: "Mapa antigo", exact: true }),
+  ).toHaveCount(0);
+  const otherEmail = await account(request);
+  const otherAuth = await (
+    await request.post(`${api}/auth/login`, {
+      data: { email: otherEmail, password },
+    })
+  ).json();
+  expect(
+    await (
+      await request.get(`${api}/races`, {
+        headers: { Authorization: `Bearer ${otherAuth.accessToken}` },
+      })
+    ).json(),
+  ).toEqual([]);
+  await universe("Raças");
+  await page.screenshot({
+    path: "test-results/universe-catalog-light.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Configurações", exact: true })
+    .click();
+  await page
+    .getByRole("combobox", { name: "Tema", exact: true })
+    .selectOption("dark");
+  await page
+    .getByRole("button", { name: "Salvar configurações", exact: true })
+    .click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await page.addStyleTag({
+    content: "* { transition: none !important; animation: none !important; }",
+  });
+  await universe("Raças");
+  for (const tab of [
+    "Raças",
+    "Criaturas",
+    "Itens",
+    "Locais",
+    "Organizações",
+    "Regras e lore",
+  ]) {
+    await page.getByRole("tab", { name: tab, exact: true }).click();
+    expect(await textContrastIssues(page), `Catálogo: ${tab}`).toEqual([]);
+  }
+  await page.getByRole("tab", { name: "Raças", exact: true }).click();
+  await page.screenshot({
+    path: "test-results/universe-catalog-dark.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({
+    path: "test-results/universe-catalog-mobile.png",
+    fullPage: true,
+  });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBeTruthy();
+  expect(errors).toEqual([]);
 });

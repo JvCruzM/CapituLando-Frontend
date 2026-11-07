@@ -13,6 +13,7 @@ import {
   BookOpen,
   Clock,
 } from "lucide-react";
+import { WorldCatalog } from "./WorldCatalog";
 import { loadStories } from "@/lib/writing-api";
 
 interface TimelineEvent {
@@ -30,6 +31,7 @@ interface ProjectMinimal {
 }
 
 export function TimelineSection() {
+  const [mode, setMode] = useState<"free" | "linked">("free");
   const [projects, setProjects] = useState<ProjectMinimal[]>([]);
 
   const [selectedProjectId, setSelectedProjectId] = useState(() => "");
@@ -142,201 +144,242 @@ export function TimelineSection() {
               ))}
             </select>
           </div>
+          {mode === "free" && (
+            <button
+              onClick={() => handleOpenModal()}
+              className="bg-[#4b1d3f] hover:bg-[#38142f] dark:bg-pink-800 dark:hover:bg-pink-900 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm shrink-0 transition-all"
+            >
+              <Plus size={16} /> Novo Evento
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div
+        role="tablist"
+        aria-label="Visualização da timeline"
+        className="flex flex-wrap gap-2"
+      >
+        {(["free", "linked"] as const).map((value) => (
           <button
-            onClick={() => handleOpenModal()}
-            className="bg-[#4b1d3f] hover:bg-[#38142f] dark:bg-pink-800 dark:hover:bg-pink-900 text-white px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm shrink-0 transition-all"
+            key={value}
+            role="tab"
+            aria-selected={mode === value}
+            onClick={() => setMode(value)}
+            className={`rounded-xl border px-4 py-2 text-xs font-bold ${mode === value ? "border-[#4b1d3f] bg-[#4b1d3f] text-white dark:border-pink-800 dark:bg-pink-800" : "border-[#4b1d3f]/20 bg-[#fcf8f2] dark:border-[#382b47] dark:bg-[#221a2b]"}`}
           >
-            <Plus size={16} /> Novo Evento
+            {value === "free" ? "Cronologia livre" : "Eventos vinculados"}
           </button>
-        </div>
-      </div>
-
-      {/* LINHA DO TEMPO */}
-      <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-[#4b1d3f]/30 dark:before:bg-[#382b47]">
-        {projectEvents.map((event) => (
-          <div key={event.id} className="relative group">
-            {/* Ponto indicador na linha */}
-            <div className="absolute -left-[21px] top-5 w-3.5 h-3.5 rounded-full bg-[#4b1d3f] dark:bg-pink-400 border-2 border-[#fcf8f2] dark:border-[#120e17] shadow-xs group-hover:scale-125 transition-transform" />
-
-            <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-5 shadow-xs space-y-3 transition-colors duration-300">
-              <div className="flex justify-between items-start gap-4">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider bg-[#f3ccde]/60 dark:bg-[#2a2035] text-[#4b1d3f] dark:text-pink-300 px-2.5 py-0.5 rounded-md inline-block mb-1.5 border border-[#4b1d3f]/15 dark:border-[#382b47]">
-                    {event.yearOrDate}
-                  </span>
-                  <h3 className="text-base font-bold font-serif text-stone-900 dark:text-stone-100">
-                    {event.title}
-                  </h3>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    onClick={() => handleOpenModal(event)}
-                    className="p-1.5 text-stone-600 dark:text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"
-                    title="Editar Evento"
-                  >
-                    <Edit2 size={15} />
-                  </button>
-                  <button
-                    onClick={() =>
-                      confirm(
-                        "Tem a certeza de que deseja excluir este evento?",
-                      ) &&
-                      setEvents((prev) => prev.filter((i) => i.id !== event.id))
-                    }
-                    className="p-1.5 text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200 rounded-lg transition-colors"
-                    title="Excluir Evento"
-                  >
-                    <Trash2 size={15} />
-                  </button>
-                </div>
-              </div>
-
-              {event.characters && (
-                <div className="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-400">
-                  <User
-                    size={14}
-                    className="text-[#4b1d3f] dark:text-pink-300 shrink-0"
-                  />
-                  <span>
-                    <strong>Personagens:</strong> {event.characters}
-                  </span>
-                </div>
-              )}
-
-              <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed pt-2 border-t border-stone-200 dark:border-[#382b47] whitespace-pre-wrap font-serif">
-                {event.description}
-              </p>
-            </div>
-          </div>
         ))}
-
-        {projectEvents.length === 0 && (
-          <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-10 text-center text-stone-600 dark:text-stone-400 space-y-2">
-            <Clock
-              size={32}
-              className="mx-auto text-stone-400 dark:text-stone-600"
-            />
-            <p className="text-xs font-semibold">
-              Nenhum evento registrado ainda para &ldquo;
-              {selectedProject?.title}&rdquo;.
-            </p>
-          </div>
-        )}
       </div>
+      {mode === "linked" ? (
+        selectedProjectId ? (
+          <WorldCatalog
+            key={selectedProjectId}
+            kind="events"
+            storyId={selectedProjectId}
+          />
+        ) : (
+          <p className="text-sm">Crie e selecione um livro primeiro.</p>
+        )
+      ) : (
+        <>
+          {/* LINHA DO TEMPO */}
+          <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-[#4b1d3f]/30 dark:before:bg-[#382b47]">
+            {projectEvents.map((event) => (
+              <div key={event.id} className="relative group">
+                {/* Ponto indicador na linha */}
+                <div className="absolute -left-[21px] top-5 w-3.5 h-3.5 rounded-full bg-[#4b1d3f] dark:bg-pink-400 border-2 border-[#fcf8f2] dark:border-[#120e17] shadow-xs group-hover:scale-125 transition-transform" />
 
-      {/* MODAL */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-[#4b1d3f]/30 dark:border-[#382b47] rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 text-stone-900 dark:text-stone-100">
-            <div className="flex justify-between items-center border-b border-[#4b1d3f]/20 dark:border-[#382b47] pb-3">
-              <h3 className="font-bold font-serif text-lg">
-                {editingEventId ? "Editar Evento" : "Novo Evento"}
-              </h3>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
-              >
-                <X size={18} />
-              </button>
-            </div>
+                <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-5 shadow-xs space-y-3 transition-colors duration-300">
+                  <div className="flex justify-between items-start gap-4">
+                    <div>
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-[#f3ccde]/60 dark:bg-[#2a2035] text-[#4b1d3f] dark:text-pink-300 px-2.5 py-0.5 rounded-md inline-block mb-1.5 border border-[#4b1d3f]/15 dark:border-[#382b47]">
+                        {event.yearOrDate}
+                      </span>
+                      <h3 className="text-base font-bold font-serif text-stone-900 dark:text-stone-100">
+                        {event.title}
+                      </h3>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => handleOpenModal(event)}
+                        className="p-1.5 text-stone-600 dark:text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"
+                        title="Editar Evento"
+                      >
+                        <Edit2 size={15} />
+                      </button>
+                      <button
+                        onClick={() =>
+                          confirm(
+                            "Tem a certeza de que deseja excluir este evento?",
+                          ) &&
+                          setEvents((prev) =>
+                            prev.filter((i) => i.id !== event.id),
+                          )
+                        }
+                        className="p-1.5 text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200 rounded-lg transition-colors"
+                        title="Excluir Evento"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
 
-            <form onSubmit={handleSave} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor="timelinesection-field-1"
-                    className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
-                  >
-                    Ano / Data / Época
-                  </label>
-                  <input
-                    id="timelinesection-field-1"
-                    type="text"
-                    required
-                    value={formData.yearOrDate}
-                    onChange={(e) =>
-                      setFormData({ ...formData, yearOrDate: e.target.value })
-                    }
-                    className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none"
-                  />
+                  {event.characters && (
+                    <div className="flex items-center gap-1.5 text-xs text-stone-600 dark:text-stone-400">
+                      <User
+                        size={14}
+                        className="text-[#4b1d3f] dark:text-pink-300 shrink-0"
+                      />
+                      <span>
+                        <strong>Personagens:</strong> {event.characters}
+                      </span>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-stone-700 dark:text-stone-300 leading-relaxed pt-2 border-t border-stone-200 dark:border-[#382b47] whitespace-pre-wrap font-serif">
+                    {event.description}
+                  </p>
                 </div>
-                <div>
-                  <label
-                    htmlFor="timelinesection-field-2"
-                    className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
-                  >
-                    Título do Evento
-                  </label>
-                  <input
-                    id="timelinesection-field-2"
-                    type="text"
-                    required
-                    value={formData.title}
-                    onChange={(e) =>
-                      setFormData({ ...formData, title: e.target.value })
-                    }
-                    className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none"
-                  />
-                </div>
               </div>
+            ))}
 
-              <div>
-                <label
-                  htmlFor="timelinesection-field-3"
-                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
-                >
-                  Personagens Envolvidos
-                </label>
-                <input
-                  id="timelinesection-field-3"
-                  type="text"
-                  value={formData.characters}
-                  onChange={(e) =>
-                    setFormData({ ...formData, characters: e.target.value })
-                  }
-                  placeholder="Ex: Gabriel, Elena..."
-                  className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none"
+            {projectEvents.length === 0 && (
+              <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-10 text-center text-stone-600 dark:text-stone-400 space-y-2">
+                <Clock
+                  size={32}
+                  className="mx-auto text-stone-400 dark:text-stone-600"
                 />
+                <p className="text-xs font-semibold">
+                  Nenhum evento registrado ainda para &ldquo;
+                  {selectedProject?.title}&rdquo;.
+                </p>
               </div>
-
-              <div>
-                <label
-                  htmlFor="timelinesection-field-4"
-                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
-                >
-                  Descrição do Evento
-                </label>
-                <textarea
-                  id="timelinesection-field-4"
-                  rows={4}
-                  required
-                  value={formData.description}
-                  onChange={(e) =>
-                    setFormData({ ...formData, description: e.target.value })
-                  }
-                  placeholder="Escreva os detalhes do acontecimento..."
-                  className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none resize-y"
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t border-[#4b1d3f]/20 dark:border-[#382b47]">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-200 rounded-xl font-semibold"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-[#4b1d3f] dark:bg-pink-800 text-white rounded-xl font-bold flex items-center gap-1 shadow-xs"
-                >
-                  <Check size={16} /> Salvar Evento
-                </button>
-              </div>
-            </form>
+            )}
           </div>
-        </div>
+
+          {/* MODAL */}
+          {isModalOpen && (
+            <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+              <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-[#4b1d3f]/30 dark:border-[#382b47] rounded-3xl p-6 w-full max-w-lg shadow-2xl space-y-4 text-stone-900 dark:text-stone-100">
+                <div className="flex justify-between items-center border-b border-[#4b1d3f]/20 dark:border-[#382b47] pb-3">
+                  <h3 className="font-bold font-serif text-lg">
+                    {editingEventId ? "Editar Evento" : "Novo Evento"}
+                  </h3>
+                  <button
+                    onClick={() => setIsModalOpen(false)}
+                    className="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSave} className="space-y-3 text-xs">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label
+                        htmlFor="timelinesection-field-1"
+                        className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                      >
+                        Ano / Data / Época
+                      </label>
+                      <input
+                        id="timelinesection-field-1"
+                        type="text"
+                        required
+                        value={formData.yearOrDate}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            yearOrDate: e.target.value,
+                          })
+                        }
+                        className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label
+                        htmlFor="timelinesection-field-2"
+                        className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                      >
+                        Título do Evento
+                      </label>
+                      <input
+                        id="timelinesection-field-2"
+                        type="text"
+                        required
+                        value={formData.title}
+                        onChange={(e) =>
+                          setFormData({ ...formData, title: e.target.value })
+                        }
+                        className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="timelinesection-field-3"
+                      className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                    >
+                      Personagens Envolvidos
+                    </label>
+                    <input
+                      id="timelinesection-field-3"
+                      type="text"
+                      value={formData.characters}
+                      onChange={(e) =>
+                        setFormData({ ...formData, characters: e.target.value })
+                      }
+                      placeholder="Ex: Gabriel, Elena..."
+                      className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label
+                      htmlFor="timelinesection-field-4"
+                      className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                    >
+                      Descrição do Evento
+                    </label>
+                    <textarea
+                      id="timelinesection-field-4"
+                      rows={4}
+                      required
+                      value={formData.description}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          description: e.target.value,
+                        })
+                      }
+                      placeholder="Escreva os detalhes do acontecimento..."
+                      className="w-full p-2.5 bg-white dark:bg-[#221a2b] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none resize-y"
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-3 border-t border-[#4b1d3f]/20 dark:border-[#382b47]">
+                    <button
+                      type="button"
+                      onClick={() => setIsModalOpen(false)}
+                      className="px-4 py-2 bg-stone-200 dark:bg-stone-800 text-stone-800 dark:text-stone-200 rounded-xl font-semibold"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-4 py-2 bg-[#4b1d3f] dark:bg-pink-800 text-white rounded-xl font-bold flex items-center gap-1 shadow-xs"
+                    >
+                      <Check size={16} /> Salvar Evento
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

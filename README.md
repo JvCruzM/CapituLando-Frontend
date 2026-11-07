@@ -13,7 +13,10 @@ Os dados são armazenados pela API do repositório [CapituLando-Backend](https:/
 - Painel com visão dos projetos e progresso da escrita.
 - Livros, capítulos e rascunhos com editor de texto e modo foco.
 - Fichas de personagens, imagens e relacionamentos.
-- Organização de universo, timeline, ideias e metas.
+- Enciclopédia do universo com raças, criaturas, itens, locais, organizações e regras.
+- Vínculos entre personagens e raças, membros de organizações e participantes de eventos.
+- Eventos ligados a capítulos e locais na timeline, além da cronologia livre.
+- Organização de ideias e metas.
 - Perfil do autor, preferências e temas claro, escuro e do sistema.
 - Recuperação da escrita e exportação/restauração de backups.
 

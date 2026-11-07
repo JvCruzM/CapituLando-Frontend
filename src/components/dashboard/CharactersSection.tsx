@@ -3,6 +3,7 @@
 import Image from "next/image";
 
 import React, { useState, useEffect, useRef } from "react";
+import { loadWorld, worldLabel, type WorldRecord } from "@/lib/world-api";
 import { loadStories } from "@/lib/writing-api";
 import {
   createCharacter,
@@ -38,6 +39,8 @@ import {
 interface Character {
   id: string;
   projectId: string;
+  raceId?: string;
+  raceName?: string;
   name: string;
   role: "Protagonista" | "Aliado" | "Antagonista" | "Secundário";
   age: number;
@@ -83,6 +86,8 @@ const toCharacter = (record: CharacterRecord): Character => ({
   id: record.id,
   projectId: record.story.id,
   name: record.name,
+  raceId: record.race?.id,
+  raceName: record.race?.name,
   role: (record.role || "Secundário") as Character["role"],
   age: record.age ?? 0,
   height: record.height || "",
@@ -192,6 +197,7 @@ export function CharactersSection() {
       .catch(() => setProjects([]));
   }, []);
 
+  const [races, setRaces] = useState<WorldRecord[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [error, setError] = useState("");
@@ -229,6 +235,26 @@ export function CharactersSection() {
     };
   }, [selectedProjectId]);
 
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    let active = true;
+    loadWorld("races", selectedProjectId)
+      .then((rows) => {
+        if (active) setRaces(rows);
+      })
+      .catch((reason) => {
+        if (active)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Não foi possível carregar as raças.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [selectedProjectId]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isRelModalOpen, setIsRelModalOpen] = useState(false);
@@ -241,6 +267,7 @@ export function CharactersSection() {
 
   const initialCharData = {
     name: "",
+    raceId: "",
     role: "Protagonista" as Character["role"],
     age: 20,
     height: "",
@@ -280,6 +307,7 @@ export function CharactersSection() {
       setEditingId(char.id);
       setFormData({
         ...char,
+        raceId: char.raceId || "",
         bloodType: char.bloodType || "",
         appearance: char.appearance ? char.appearance.join(", ") : "",
         likes: char.likes ? char.likes.join(", ") : "",
@@ -342,6 +370,7 @@ export function CharactersSection() {
         .filter(Boolean);
     const input: CharacterInput = {
       story: { id: selectedProjectId },
+      race: formData.raceId ? { id: formData.raceId } : null,
       name: formData.name.trim(),
       role: formData.role,
       age: Number(formData.age) || 0,
@@ -367,6 +396,10 @@ export function CharactersSection() {
       const mapped: Character = {
         id: saved.id,
         projectId: saved.storyId,
+        raceId: input.race?.id,
+        raceName: races.find((race) => race.id === input.race?.id)?.name as
+          | string
+          | undefined,
         name: input.name,
         role: input.role as Character["role"],
         age: input.age,
@@ -630,12 +663,14 @@ export function CharactersSection() {
               >
                 <div className="absolute top-4 right-4 flex gap-1 z-10">
                   <button
+                    aria-label={`Editar ficha ${char.name}`}
                     onClick={() => handleOpenCharModal(char)}
                     className="p-1 bg-white/80 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-lg text-stone-600 dark:text-stone-300 hover:text-[#4b1d3f] dark:hover:text-pink-200"
                   >
                     <Edit2 size={13} />
                   </button>
                   <button
+                    aria-label={`Excluir ficha ${char.name}`}
                     onClick={() => handleDeleteChar(char.id)}
                     className="p-1 bg-white/80 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-lg text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200"
                   >
@@ -680,6 +715,16 @@ export function CharactersSection() {
                       <h3 className="text-xl font-bold font-serif text-stone-900 dark:text-stone-100 leading-tight">
                         {char.name}
                       </h3>
+                      {char.raceId && (
+                        <p className="mt-1 text-xs text-stone-600 dark:text-stone-300">
+                          Raça:{" "}
+                          {races.find((race) => race.id === char.raceId)
+                            ? worldLabel(
+                                races.find((race) => race.id === char.raceId)!,
+                              )
+                            : char.raceName || "Raça cadastrada"}
+                        </p>
+                      )}
                       <div className="bg-white/80 dark:bg-[#221a2b] p-2.5 rounded-2xl border border-stone-200/80 dark:border-[#382b47] grid grid-cols-2 gap-1.5 text-[11px] font-serif text-stone-800 dark:text-stone-200">
                         <span>
                           <Calendar
@@ -904,6 +949,28 @@ export function CharactersSection() {
             )}
 
             <form onSubmit={handleSaveChar} className="space-y-2.5">
+              <label className="block text-xs font-bold">
+                Raça
+                <select
+                  value={formData.raceId}
+                  onChange={(event) =>
+                    setFormData({ ...formData, raceId: event.target.value })
+                  }
+                  className="mt-2 w-full rounded-xl border border-[#4b1d3f]/20 bg-white p-2.5 dark:border-[#382b47] dark:bg-[#221a2b]"
+                >
+                  <option value="">Sem raça definida</option>
+                  {races
+                    .filter((race) => race.story.id === selectedProjectId)
+                    .map((race) => (
+                      <option key={race.id} value={race.id}>
+                        {worldLabel(race)}
+                      </option>
+                    ))}
+                </select>
+                <span className="mt-1 block font-normal text-stone-600 dark:text-stone-300">
+                  Cadastre as raças deste livro em Universo / Mundo.
+                </span>
+              </label>
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="text"

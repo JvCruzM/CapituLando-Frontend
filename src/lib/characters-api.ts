@@ -3,6 +3,7 @@ import { apiRequest } from "@/lib/api";
 export interface CharacterRecord {
   id: string;
   story: { id: string };
+  race?: { id: string; name?: string } | null;
   name: string;
   role?: string | null;
   age?: number | null;
@@ -24,6 +25,7 @@ export interface CharacterRecord {
 
 export interface CharacterInput {
   story: { id: string };
+  race?: { id: string; name?: string } | null;
   name: string;
   role: string;
   age: number;
