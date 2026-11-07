@@ -8,6 +8,7 @@ export interface Story {
   genre?: string | null;
   status: "DRAFT" | "IN_PROGRESS" | "COMPLETED";
   progressPercentage: number;
+  coverImage?: string | null;
 }
 
 export interface Chapter {
@@ -24,6 +25,10 @@ export interface Chapter {
 export interface WritingProject extends Story {
   chapters: Chapter[];
   drafts: Chapter[];
+}
+
+export function loadStories() {
+  return apiRequest<Story[]>("/stories");
 }
 
 export async function loadWritingProjects(): Promise<WritingProject[]> {
@@ -61,6 +66,7 @@ export function updateStory(story: Story) {
     body: JSON.stringify({
       title: story.title,
       synopsis: story.synopsis,
+      coverImage: story.coverImage,
       description: story.description,
       genre: story.genre,
       status: story.status,

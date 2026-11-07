@@ -1,5 +1,8 @@
 "use client";
 
+import { sanitizeHtml, textToHtml } from "@/lib/html";
+import { useWorkspaceSection } from "./WorkspaceProvider";
+import { useAuthenticatedUser } from "@/components/auth/AuthGuard";
 import React, { useState, useEffect, useRef } from "react";
 import {
   createStory,
@@ -37,11 +40,40 @@ import {
 } from "lucide-react";
 
 export function WritingSpace() {
-  const [content, setContent] = useState("");
-  const [title, setTitle] = useState("Novo Capítulo");
+  type Recovery = {
+    content?: string;
+    title?: string;
+    projectId?: string;
+    chapterId?: string;
+    type?: "chapter" | "draft";
+  };
+  const [remoteRecovery, setRemoteRecovery] = useWorkspaceSection<Recovery>(
+    "writing",
+    {},
+  );
+  const user = useAuthenticatedUser()!;
+  const recoveryKey = `capitulando:${user.id}:writing`;
+  const [recovered] = useState<{
+    content?: string;
+    title?: string;
+    projectId?: string;
+    chapterId?: string;
+    type?: "chapter" | "draft";
+  }>(() => {
+    try {
+      const local = JSON.parse(localStorage.getItem(recoveryKey) || "{}");
+      return local.content ? local : remoteRecovery;
+    } catch {
+      return remoteRecovery;
+    }
+  });
+  const [content, setContent] = useState(recovered.content || "");
+  const [title, setTitle] = useState(recovered.title || "Novo Capítulo");
 
   const [projects, setProjects] = useState<WritingProject[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedProjectId, setSelectedProjectId] = useState(
+    recovered.projectId || "",
+  );
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [apiError, setApiError] = useState("");
 
@@ -49,7 +81,15 @@ export function WritingSpace() {
     loadWritingProjects()
       .then((loadedProjects) => {
         setProjects(loadedProjects);
-        if (loadedProjects[0]) setSelectedProjectId(loadedProjects[0].id);
+        if (!recovered.projectId && loadedProjects[0])
+          setSelectedProjectId(loadedProjects[0].id);
+        if (
+          recovered.projectId &&
+          !loadedProjects.some((project) => project.id === recovered.projectId)
+        )
+          setApiError(
+            "O livro da recuperação não está disponível. Escolha um livro para salvar o texto recuperado.",
+          );
       })
       .catch((error: unknown) =>
         setApiError(
@@ -59,15 +99,86 @@ export function WritingSpace() {
         ),
       )
       .finally(() => setLoadingProjects(false));
-  }, []);
-  const [exportType, setExportType] = useState<"chapter" | "draft">("chapter");
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  }, [recovered.projectId]);
+  const [exportType, setExportType] = useState<"chapter" | "draft">(
+    recovered.type || "chapter",
+  );
+  const [editingItemId, setEditingItemId] = useState<string | null>(
+    recovered.chapterId || null,
+  );
 
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newGenre, setNewGenre] = useState("Fantasia");
 
-  const [isSaved, setIsSaved] = useState(true);
+  const [isSaved, setIsSaved] = useState(!recovered.content);
+  const inFlight = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const currentText = useRef({ content, title });
+  useEffect(() => {
+    currentText.current = { content, title };
+  }, [content, title]);
+  useEffect(() => {
+    if (!isSaved) {
+      try {
+        localStorage.setItem(
+          recoveryKey,
+          JSON.stringify({
+            content,
+            title,
+            projectId: selectedProjectId,
+            chapterId: editingItemId,
+            type: exportType,
+          }),
+        );
+      } catch {
+        queueMicrotask(() =>
+          setApiError(
+            "Não foi possível preservar a recuperação local. Salve ou exporte seu texto antes de sair.",
+          ),
+        );
+      }
+    }
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!isSaved) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [
+    content,
+    title,
+    selectedProjectId,
+    editingItemId,
+    exportType,
+    isSaved,
+    recoveryKey,
+  ]);
+  useEffect(() => {
+    if (isSaved || !selectedProjectId) return;
+    const timer = setTimeout(
+      () =>
+        setRemoteRecovery({
+          content,
+          title,
+          projectId: selectedProjectId,
+          chapterId: editingItemId || undefined,
+          type: exportType,
+        }),
+      250,
+    );
+    return () => clearTimeout(timer);
+  }, [
+    content,
+    title,
+    selectedProjectId,
+    editingItemId,
+    exportType,
+    isSaved,
+    setRemoteRecovery,
+  ]);
   const [isFocus, setIsFocus] = useState(false);
   const [copied, setCopied] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -105,32 +216,41 @@ export function WritingSpace() {
   const wordCount = plainText.trim() ? plainText.trim().split(/\s+/).length : 0;
   const readingTime = Math.ceil(wordCount / 200);
 
+  const applyFormat = (command: string, value?: string) => {
+    document.execCommand(command, false, value);
+    if (editorRef.current) setContent(editorRef.current.innerHTML);
+    setIsSaved(false);
+  };
+
   const handlePaste = (e: React.ClipboardEvent<HTMLDivElement>) => {
     e.preventDefault();
     const text = e.clipboardData.getData("text/plain");
-    const html = text
-      .split(/\r?\n+/)
-      .filter(Boolean)
-      .map((p) => `<p>${p.trim()}</p>`)
-      .join("");
-    document.execCommand("insertHTML", false, html || text);
+    document.execCommand("insertHTML", false, textToHtml(text));
     if (editorRef.current) setContent(editorRef.current.innerHTML);
     setIsSaved(false);
   };
 
   const handleSave = async () => {
+    if (inFlight.current) return;
     if (!selectedProjectId) {
       setApiError("Crie ou selecione um livro antes de salvar o texto.");
       return;
     }
     setApiError("");
+    inFlight.current = true;
+    setSaving(true);
+    const sent = { content, title };
     try {
       const savedChapter = await saveChapter(
         selectedProjectId,
         {
           title: title.trim() || "Sem Título",
-          content,
-          status: exportType === "draft" ? "DRAFT" : "IN_REVIEW",
+          content: sanitizeHtml(content),
+          status:
+            exportType === "draft"
+              ? "DRAFT"
+              : items.find((item) => item.id === editingItemId)?.status ||
+                "IN_REVIEW",
         },
         editingItemId || undefined,
       );
@@ -148,7 +268,9 @@ export function WritingSpace() {
                         ),
                         savedChapter,
                       ]
-                    : project.chapters,
+                    : project.chapters.filter(
+                        (item) => item.id !== savedChapter.id,
+                      ),
                 drafts:
                   key === "drafts"
                     ? [
@@ -157,13 +279,23 @@ export function WritingSpace() {
                         ),
                         savedChapter,
                       ]
-                    : project.drafts,
+                    : project.drafts.filter(
+                        (item) => item.id !== savedChapter.id,
+                      ),
               }
             : project,
         ),
       );
       setEditingItemId(savedChapter.id);
-      setIsSaved(true);
+      const unchanged =
+        currentText.current.content === sent.content &&
+        currentText.current.title === sent.title;
+      setIsSaved(unchanged);
+      if (unchanged) {
+        localStorage.removeItem(recoveryKey);
+        setRemoteRecovery({});
+      }
+      window.dispatchEvent(new Event("capitulando:data-changed"));
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
@@ -172,6 +304,9 @@ export function WritingSpace() {
           ? error.message
           : "Não foi possível salvar o texto.",
       );
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
     }
   };
 
@@ -184,11 +319,12 @@ export function WritingSpace() {
       a.href = URL.createObjectURL(blob);
       a.download = `${title.toLowerCase().replace(/\s+/g, "_")}.txt`;
       a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
     } else {
       const w = window.open("", "_blank");
       if (!w) return;
       w.document.write(
-        `<html><head><title>${title}</title><style>body{font-family:serif;padding:45px;line-height:1.6}h1{text-align:center}p{text-indent:${indent ? "2.5em" : "0"};margin-bottom:12px;text-align:justify}</style></head><body><h1>${title}</h1>${content}</body></html>`,
+        `<html><head><title>${title.replace(/[<>&]/g, "")}</title><style>body{font-family:serif;padding:45px;line-height:1.6}h1{text-align:center}p{text-indent:${indent ? "2.5em" : "0"};margin-bottom:12px;text-align:justify}</style></head><body><h1>${title.replace(/[<>&]/g, "")}</h1>${sanitizeHtml(content)}</body></html>`,
       );
       w.document.close();
       w.onload = () => {
@@ -250,12 +386,28 @@ export function WritingSpace() {
             <BookOpen size={15} className="text-[#4b1d3f] dark:text-pink-300" />
             <select
               value={selectedProjectId}
-              onChange={(e) =>
-                e.target.value === "new"
-                  ? setIsNewModalOpen(true)
-                  : (setSelectedProjectId(e.target.value),
-                    setEditingItemId(null))
-              }
+              disabled={saving}
+              onChange={(e) => {
+                if (e.target.value === "new") {
+                  setIsNewModalOpen(true);
+                  return;
+                }
+                if (
+                  !isSaved &&
+                  !confirm(
+                    "Salvar ou exportar o texto antes de trocar de livro. Deseja descartar esta edição?",
+                  )
+                )
+                  return;
+                setSelectedProjectId(e.target.value);
+                setEditingItemId(null);
+                setContent("");
+                setTitle("Novo Capítulo");
+                setIsSaved(true);
+                localStorage.removeItem(recoveryKey);
+                setRemoteRecovery({});
+                if (editorRef.current) editorRef.current.innerHTML = "";
+              }}
               className="bg-transparent text-xs font-bold text-stone-800 dark:text-stone-200 focus:outline-none cursor-pointer"
             >
               {loadingProjects && (
@@ -282,7 +434,7 @@ export function WritingSpace() {
             <button
               onClick={() => {
                 setExportType("chapter");
-                setEditingItemId(null);
+                if (content) setIsSaved(false);
               }}
               className={`px-2.5 py-1 rounded-lg font-semibold ${exportType === "chapter" ? "bg-[#4b1d3f] text-white dark:bg-pink-800" : "text-stone-600 dark:text-stone-400"}`}
             >
@@ -291,7 +443,7 @@ export function WritingSpace() {
             <button
               onClick={() => {
                 setExportType("draft");
-                setEditingItemId(null);
+                if (content) setIsSaved(false);
               }}
               className={`px-2.5 py-1 rounded-lg font-semibold ${exportType === "draft" ? "bg-[#4b1d3f] text-white dark:bg-pink-800" : "text-stone-600 dark:text-stone-400"}`}
             >
@@ -306,15 +458,23 @@ export function WritingSpace() {
             />
             <select
               value={editingItemId || ""}
+              disabled={saving}
               onChange={(e) => {
+                if (
+                  !isSaved &&
+                  !confirm(
+                    "Descartar o texto ainda não salvo? Exporte ou salve antes de continuar.",
+                  )
+                )
+                  return;
                 const item = items.find((i) => i.id === e.target.value);
                 if (item) {
                   setEditingItemId(item.id);
                   setTitle(item.title);
-                  setContent(item.content);
+                  setContent(sanitizeHtml(item.content));
                   setIsSaved(true);
                   if (editorRef.current)
-                    editorRef.current.innerHTML = item.content;
+                    editorRef.current.innerHTML = sanitizeHtml(item.content);
                 } else {
                   setEditingItemId(null);
                 }
@@ -332,7 +492,12 @@ export function WritingSpace() {
 
           <button
             onClick={() => {
+              if (!isSaved && !confirm("Descartar o texto ainda não salvo?"))
+                return;
               setEditingItemId(null);
+              localStorage.removeItem(recoveryKey);
+              setRemoteRecovery({});
+              setIsSaved(true);
               setTitle("Novo Capítulo");
               setContent("");
               if (editorRef.current) editorRef.current.innerHTML = "";
@@ -343,7 +508,7 @@ export function WritingSpace() {
             <PlusCircle size={15} />
           </button>
           <button
-            disabled={loadingProjects || !selectedProjectId}
+            disabled={saving || loadingProjects || !selectedProjectId}
             onClick={() => void handleSave()}
             className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-1.5 ${success ? "bg-emerald-600 text-white" : "bg-[#4b1d3f] dark:bg-pink-800 text-white"}`}
           >
@@ -427,10 +592,14 @@ export function WritingSpace() {
             </div>
           </div>
           <div>
-            <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+            <label
+              htmlFor="writingsection-field-1"
+              className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+            >
               Tamanho: {fontSize}px
             </label>
             <input
+              id="writingsection-field-1"
               type="range"
               min="14"
               max="32"
@@ -475,47 +644,49 @@ export function WritingSpace() {
       <div className="bg-[#FCF8F2] dark:bg-[#1a1120] border border-[#4b1d3f]/20 dark:border-[#2e1d3a] rounded-3xl p-6 md:p-10 shadow-xs space-y-4 relative min-h-[550px] flex flex-col justify-between">
         <div className="flex flex-wrap items-center gap-1.5 pb-3 border-b border-[#4b1d3f]/15 dark:border-[#2e1d3a] text-stone-700 dark:text-stone-300">
           <button
-            onClick={() => document.execCommand("bold")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyFormat("bold")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg font-bold"
           >
             <Bold size={16} />
           </button>
           <button
-            onClick={() => document.execCommand("italic")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyFormat("italic")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg italic"
           >
             <Italic size={16} />
           </button>
           <button
-            onClick={() => document.execCommand("underline")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyFormat("underline")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg underline"
           >
             <Underline size={16} />
           </button>
           <div className="h-4 w-px bg-stone-300 dark:bg-stone-700 mx-1" />
           <button
-            onClick={() => document.execCommand("formatBlock", false, "<h1>")}
+            onClick={() => applyFormat("formatBlock", "<h1>")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
             <Heading1 size={16} />
           </button>
           <button
-            onClick={() => document.execCommand("formatBlock", false, "<h2>")}
+            onClick={() => applyFormat("formatBlock", "<h2>")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
             <Heading2 size={16} />
           </button>
           <div className="h-4 w-px bg-stone-300 dark:bg-[#2e1d3a] mx-1" />
           <button
-            onClick={() =>
-              document.execCommand("formatBlock", false, "<blockquote>")
-            }
+            onClick={() => applyFormat("formatBlock", "<blockquote>")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
             <Quote size={16} />
           </button>
           <button
-            onClick={() => document.execCommand("insertUnorderedList")}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => applyFormat("insertUnorderedList")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
             <List size={16} />
@@ -544,7 +715,13 @@ export function WritingSpace() {
 
         <div className="flex-grow my-2 relative">
           <div
-            ref={editorRef}
+            ref={(element) => {
+              editorRef.current = element;
+              if (element && !element.dataset.initialized) {
+                element.innerHTML = sanitizeHtml(recovered.content || "");
+                element.dataset.initialized = "true";
+              }
+            }}
             contentEditable
             onPaste={handlePaste}
             onInput={(e) => {
@@ -552,7 +729,7 @@ export function WritingSpace() {
               setIsSaved(false);
             }}
             style={{ fontSize: `${fontSize}px` }}
-            className={`w-full h-full min-h-[380px] bg-transparent focus:outline-none text-stone-800 dark:text-stone-200 ${fontClass} leading-${lineHeight} overflow-y-auto whitespace-pre-wrap editor-area`}
+            className={`w-full h-full min-h-[380px] bg-transparent focus:outline-none text-stone-800 dark:text-stone-200 ${fontClass} ${lineHeight === "normal" ? "leading-normal" : lineHeight === "loose" ? "leading-loose" : "leading-relaxed"} overflow-y-auto whitespace-pre-wrap editor-area`}
           />
         </div>
 
@@ -570,7 +747,7 @@ export function WritingSpace() {
               <strong>{plainText.length}</strong> Caracteres
             </span>
           </div>
-          <div className="flex items-center gap-1.5 text-stone-500">
+          <div className="flex items-center gap-1.5 text-stone-600 dark:text-stone-400">
             <Clock size={14} /> <span>~{readingTime} min de leitura</span>
           </div>
         </div>
@@ -584,7 +761,7 @@ export function WritingSpace() {
               <h3 className="font-bold font-serif text-lg">Criar Novo Livro</h3>
               <button
                 onClick={() => setIsNewModalOpen(false)}
-                className="text-stone-500 hover:text-stone-900"
+                className="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
               >
                 <X size={18} />
               </button>
@@ -621,8 +798,14 @@ export function WritingSpace() {
               className="space-y-3 text-xs"
             >
               <div>
-                <label className="block font-bold mb-1">Título</label>
+                <label
+                  htmlFor="writingsection-field-2"
+                  className="block font-bold mb-1"
+                >
+                  Título
+                </label>
                 <input
+                  id="writingsection-field-2"
                   type="text"
                   required
                   placeholder="Ex: Crónicas"
@@ -632,8 +815,14 @@ export function WritingSpace() {
                 />
               </div>
               <div>
-                <label className="block font-bold mb-1">Género</label>
+                <label
+                  htmlFor="writingsection-field-3"
+                  className="block font-bold mb-1"
+                >
+                  Género
+                </label>
                 <input
+                  id="writingsection-field-3"
                   type="text"
                   required
                   placeholder="Ex: Fantasia"

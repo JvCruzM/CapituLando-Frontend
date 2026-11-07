@@ -2,7 +2,52 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  color-scheme: light;
+  --page-bg: #fcf8f2;
+  --page-text: #292524;
+  --control-bg: #fffdf9;
+  --control-text: #3c2639;
+  --muted-text: #655c63;
+}
+:root.dark {
+  color-scheme: dark;
+  --page-bg: #120e17;
+  --page-text: #f5f5f4;
+  --control-bg: #221a2b;
+  --control-text: #f5edf3;
+  --muted-text: #c6bdc9;
+}
 body {
-  background-color: #ebd9c6;
-  color: #d6a3c4;
+  background-color: var(--page-bg);
+  color: var(--page-text);
+}
+:root select,
+:root.dark select {
+  color: var(--control-text);
+  background-color: var(--control-bg);
+}
+:root select option,
+:root select optgroup,
+:root.dark select option,
+:root.dark select optgroup {
+  color: var(--control-text);
+  background-color: var(--control-bg);
+}
+:root input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+:root textarea {
+  color: var(--control-text);
+}
+:root input::placeholder,
+:root textarea::placeholder {
+  color: var(--muted-text);
+  opacity: 1;
+}
+:root :focus-visible {
+  outline: 2px solid #96708e;
+  outline-offset: 3px;
+}
+::selection {
+  background: #dec1d5;
+  color: #38142f;
 }

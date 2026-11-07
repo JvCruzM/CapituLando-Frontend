@@ -3,7 +3,7 @@
 import Image from "next/image";
 
 import React, { useState, useEffect, useRef } from "react";
-import { loadWritingProjects } from "@/lib/writing-api";
+import { loadStories } from "@/lib/writing-api";
 import {
   createCharacter,
   createCharacterRelationship,
@@ -184,7 +184,7 @@ export function CharactersSection() {
   const [selectedProjectId, setSelectedProjectId] = useState("");
 
   useEffect(() => {
-    loadWritingProjects()
+    loadStories()
       .then((loaded) => {
         setProjects(loaded.map(({ id, title }) => ({ id, title })));
         if (loaded[0]) setSelectedProjectId(loaded[0].id);
@@ -543,13 +543,13 @@ export function CharactersSection() {
         <div className="flex gap-2">
           <button
             onClick={() => setActiveTab("characters")}
-            className={`pb-1 px-2.5 font-bold text-xs flex items-center gap-1.5 border-b-2 transition-colors ${activeTab === "characters" ? "border-[#4b1d3f] dark:border-pink-300 text-[#4b1d3f] dark:text-pink-300" : "border-transparent text-stone-500"}`}
+            className={`pb-1 px-2.5 font-bold text-xs flex items-center gap-1.5 border-b-2 transition-colors ${activeTab === "characters" ? "border-[#4b1d3f] dark:border-pink-300 text-[#4b1d3f] dark:text-pink-300" : "border-transparent text-stone-600 dark:text-stone-400"}`}
           >
             <Users size={14} /> Fichas ({currentChars.length})
           </button>
           <button
             onClick={() => setActiveTab("relationships")}
-            className={`pb-1 px-2.5 font-bold text-xs flex items-center gap-1.5 border-b-2 transition-colors ${activeTab === "relationships" ? "border-[#4b1d3f] dark:border-pink-300 text-[#4b1d3f] dark:text-pink-300" : "border-transparent text-stone-500"}`}
+            className={`pb-1 px-2.5 font-bold text-xs flex items-center gap-1.5 border-b-2 transition-colors ${activeTab === "relationships" ? "border-[#4b1d3f] dark:border-pink-300 text-[#4b1d3f] dark:text-pink-300" : "border-transparent text-stone-600 dark:text-stone-400"}`}
           >
             <Heart size={14} /> Relacionamentos ({currentRels.length})
           </button>
@@ -585,7 +585,7 @@ export function CharactersSection() {
           <div className="bg-[#fcf8f2] dark:bg-[#1a1321] p-3 rounded-2xl border border-[#4b1d3f]/20 dark:border-[#382b47] flex flex-col sm:flex-row gap-3 items-center justify-between shadow-xs">
             <div className="relative w-full sm:w-64">
               <Search
-                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400"
+                className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-600 dark:text-stone-400"
                 size={14}
               />
               <input
@@ -631,13 +631,13 @@ export function CharactersSection() {
                 <div className="absolute top-4 right-4 flex gap-1 z-10">
                   <button
                     onClick={() => handleOpenCharModal(char)}
-                    className="p-1 bg-white/80 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-lg text-stone-600 dark:text-stone-300 hover:text-[#4b1d3f]"
+                    className="p-1 bg-white/80 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-lg text-stone-600 dark:text-stone-300 hover:text-[#4b1d3f] dark:hover:text-pink-200"
                   >
                     <Edit2 size={13} />
                   </button>
                   <button
                     onClick={() => handleDeleteChar(char.id)}
-                    className="p-1 bg-white/80 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-lg text-red-500 hover:text-red-700"
+                    className="p-1 bg-white/80 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-lg text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200"
                   >
                     <Trash2 size={13} />
                   </button>
@@ -648,7 +648,7 @@ export function CharactersSection() {
                     <div className="relative bg-white dark:bg-[#221a2b] p-1.5 pb-5 rounded-md shadow-xs border border-stone-200 dark:border-[#382b47] shrink-0 w-28">
                       <Paperclip
                         size={14}
-                        className="absolute -top-2 left-1/2 -translate-x-1/2 text-stone-400"
+                        className="absolute -top-2 left-1/2 -translate-x-1/2 text-stone-600 dark:text-stone-400"
                       />
                       <div className="relative aspect-[3/4] w-full overflow-hidden bg-stone-100 dark:bg-[#1a1321] border border-stone-200 dark:border-[#382b47] rounded-xs">
                         {char.imageUrl ? (
@@ -664,7 +664,7 @@ export function CharactersSection() {
                             }}
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[10px] text-stone-400">
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-stone-600 dark:text-stone-400">
                             Sem foto
                           </div>
                         )}
@@ -796,13 +796,13 @@ export function CharactersSection() {
                   <div className="absolute top-2 right-2 flex gap-1 z-10">
                     <button
                       onClick={() => handleOpenRelModal(rel)}
-                      className="p-1 text-stone-500 hover:text-stone-900 dark:hover:text-stone-100"
+                      className="p-1 text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
                     >
                       <Edit2 size={13} />
                     </button>
                     <button
                       onClick={() => handleDeleteRel(rel)}
-                      className="p-1 text-red-400 hover:text-red-600"
+                      className="p-1 text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200"
                     >
                       <Trash2 size={13} />
                     </button>
@@ -810,18 +810,21 @@ export function CharactersSection() {
 
                   <div className="flex items-center justify-between text-xs gap-2 px-1">
                     <div className="flex items-center gap-2 max-w-[110px]">
-                      <div className="relative w-8 h-8 rounded-full overflow-hidden bg-white border border-[#4b1d3f]/20 shrink-0 shadow-xs">
+                      <div className="relative w-12 aspect-[3/4] rounded-xs overflow-hidden bg-stone-100 dark:bg-[#1a1321] border border-stone-200 dark:border-[#382b47] shrink-0 shadow-xs">
                         {c1.imageUrl ? (
                           <Image
                             src={c1.imageUrl}
                             alt={c1.name}
                             fill
-                            sizes="32px"
+                            sizes="48px"
                             unoptimized
-                            className="object-cover"
+                            style={{
+                              objectFit: c1.imageFit || "cover",
+                              objectPosition: c1.imagePosition || "center",
+                            }}
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[8px] text-stone-400">
+                          <div className="w-full h-full flex items-center justify-center text-[8px] text-stone-600 dark:text-stone-400">
                             -
                           </div>
                         )}
@@ -836,18 +839,21 @@ export function CharactersSection() {
                     </span>
 
                     <div className="flex items-center gap-2 max-w-[110px] flex-row-reverse text-right">
-                      <div className="relative w-8 h-8 rounded-full overflow-hidden bg-white border border-[#4b1d3f]/20 shrink-0 shadow-xs">
+                      <div className="relative w-12 aspect-[3/4] rounded-xs overflow-hidden bg-stone-100 dark:bg-[#1a1321] border border-stone-200 dark:border-[#382b47] shrink-0 shadow-xs">
                         {c2.imageUrl ? (
                           <Image
                             src={c2.imageUrl}
                             alt={c2.name}
                             fill
-                            sizes="32px"
+                            sizes="48px"
                             unoptimized
-                            className="object-cover"
+                            style={{
+                              objectFit: c2.imageFit || "cover",
+                              objectPosition: c2.imagePosition || "center",
+                            }}
                           />
                         ) : (
-                          <div className="w-full h-full flex items-center justify-center text-[8px] text-stone-400">
+                          <div className="w-full h-full flex items-center justify-center text-[8px] text-stone-600 dark:text-stone-400">
                             -
                           </div>
                         )}
@@ -1032,7 +1038,10 @@ export function CharactersSection() {
                   />
                 )}
                 {isProcessingImage && (
-                  <p className="text-[10px] text-stone-500" aria-live="polite">
+                  <p
+                    className="text-[10px] text-stone-600 dark:text-stone-400"
+                    aria-live="polite"
+                  >
                     Preparando imagem para envio...
                   </p>
                 )}

@@ -1,0 +1,51 @@
+name: Verify frontend and user flows
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: capitulando_test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: capitulando_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      E2E_DATABASE_URL: jdbc:postgresql://127.0.0.1:5432/capitulando_e2e
+      E2E_DATABASE_USERNAME: capitulando_test
+      E2E_DATABASE_PASSWORD: test
+      E2E_BACKEND_PATH: ${{ github.workspace }}/backend
+      NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:8081
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: JvCruzM/CapituLando-Backend
+          ref: main
+          path: backend
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+      - run: chmod +x backend/mvnw
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run build
+      - run: npm audit --audit-level=moderate
+      - run: npx playwright install --with-deps chromium
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: test-results

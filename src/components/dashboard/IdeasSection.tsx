@@ -1,5 +1,6 @@
 "use client";
 
+import { useWorkspaceSection } from "./WorkspaceProvider";
 import React, { useState, useEffect, useCallback } from "react";
 import {
   Lightbulb,
@@ -15,7 +16,7 @@ import {
   ShieldAlert,
   BookmarkPlus,
 } from "lucide-react";
-import { loadWritingProjects } from "@/lib/writing-api";
+import { loadStories } from "@/lib/writing-api";
 
 interface Idea {
   id: string;
@@ -169,9 +170,12 @@ const SUGGESTIONS_DATABASE: Record<
 export function IdeasSection() {
   const [projects, setProjects] = useState<ProjectMinimal[]>([]);
 
+  const [selectedProjectId, setSelectedProjectId] = useState(() => "");
+
   useEffect(() => {
-    loadWritingProjects()
+    loadStories()
       .then((loaded) => {
+        if (loaded[0]) setSelectedProjectId(loaded[0].id);
         setProjects(
           loaded.map(({ id, title, genre }) => ({
             id,
@@ -183,21 +187,7 @@ export function IdeasSection() {
       .catch(() => setProjects([]));
   }, []);
 
-  const [ideas, setIdeas] = useState<Idea[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_ideas");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("capitulando_ideas", JSON.stringify(ideas));
-    }
-  }, [ideas]);
-
-  const [selectedProjectId, setSelectedProjectId] = useState(
-    () => projects[0]?.id || "1",
-  );
+  const [ideas, setIdeas] = useWorkspaceSection<Idea[]>("ideas", []);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingIdeaId, setEditingIdeaId] = useState<string | null>(null);
@@ -230,9 +220,9 @@ export function IdeasSection() {
   );
 
   const handleSaveSuggestionAsIdea = () => {
-    if (!currentSuggestion) return;
+    if (!currentSuggestion || !selectedProjectId) return;
     const newIdea: Idea = {
-      id: Date.now().toString(),
+      id: crypto.randomUUID(),
       projectId: selectedProjectId,
       content: `${currentSuggestion.type}: ${currentSuggestion.text}`,
       category: "Geral",
@@ -256,8 +246,12 @@ export function IdeasSection() {
 
   const handleSaveIdea = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProjectId) {
+      alert("Crie e selecione um livro primeiro.");
+      return;
+    }
     const newIdea: Idea = {
-      id: editingIdeaId || Date.now().toString(),
+      id: editingIdeaId || crypto.randomUUID(),
       projectId: selectedProjectId,
       content: ideaContent,
       category: ideaCategory,
@@ -391,7 +385,7 @@ export function IdeasSection() {
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleOpenModal(idea)}
-                    className="p-1.5 text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"
+                    className="p-1.5 text-stone-600 dark:text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"
                   >
                     <Edit2 size={14} />
                   </button>
@@ -399,13 +393,13 @@ export function IdeasSection() {
                     onClick={() =>
                       setIdeas((prev) => prev.filter((i) => i.id !== idea.id))
                     }
-                    className="p-1.5 text-red-400 hover:text-red-500 rounded-lg transition-colors"
+                    className="p-1.5 text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200 rounded-lg transition-colors"
                   >
                     <Trash2 size={14} />
                   </button>
                 </div>
               </div>
-              <div className="flex justify-between items-center text-[10px] text-stone-500 dark:text-stone-400 border-t border-stone-200 dark:border-[#382b47] pt-3">
+              <div className="flex justify-between items-center text-[10px] text-stone-600 dark:text-stone-400 border-t border-stone-200 dark:border-[#382b47] pt-3">
                 <span className="font-bold uppercase tracking-wider text-[#4b1d3f] dark:text-pink-300 bg-white dark:bg-[#221a2b] px-2 py-0.5 rounded border border-[#4b1d3f]/15 dark:border-[#382b47]">
                   {idea.category || "Geral"}
                 </span>
@@ -416,7 +410,7 @@ export function IdeasSection() {
         </div>
 
         {projectIdeas.length === 0 && (
-          <div className="text-center py-12 bg-[#fcf8f2] dark:bg-[#1a1321] rounded-3xl border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] text-stone-500 dark:text-stone-400 space-y-2">
+          <div className="text-center py-12 bg-[#fcf8f2] dark:bg-[#1a1321] rounded-3xl border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] text-stone-600 dark:text-stone-400 space-y-2">
             <Lightbulb
               size={32}
               className="mx-auto text-stone-400 dark:text-stone-600"
@@ -439,17 +433,21 @@ export function IdeasSection() {
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
+                className="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
               >
                 <X size={18} />
               </button>
             </div>
             <form onSubmit={handleSaveIdea} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="ideassection-field-1"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Categoria
                 </label>
                 <select
+                  id="ideassection-field-1"
                   value={ideaCategory}
                   onChange={(e) =>
                     setIdeaCategory(e.target.value as Idea["category"])
@@ -464,10 +462,14 @@ export function IdeasSection() {
                 </select>
               </div>
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="ideassection-field-2"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Anotação / Insight
                 </label>
                 <textarea
+                  id="ideassection-field-2"
                   rows={4}
                   required
                   placeholder="Escreva o seu pensamento..."

@@ -1,5 +1,6 @@
 "use client";
 
+import { sanitizeHtml } from "@/lib/html";
 import React, { useEffect, useState } from "react";
 import {
   BookOpen,
@@ -21,12 +22,6 @@ import {
   type WritingProject,
 } from "@/lib/writing-api";
 
-function toPlainText(content: string) {
-  return (
-    new DOMParser().parseFromString(content, "text/html").body.textContent || ""
-  );
-}
-
 export function ProjectsSection() {
   const [projects, setProjects] = useState<WritingProject[]>([]);
   const [activeTabMap, setActiveTabMap] = useState<
@@ -44,6 +39,10 @@ export function ProjectsSection() {
   );
   const [projTitle, setProjTitle] = useState("");
   const [projGenre, setProjGenre] = useState("");
+  const [projStatus, setProjStatus] =
+    useState<WritingProject["status"]>("DRAFT");
+  const [chapterStatus, setChapterStatus] =
+    useState<Chapter["status"]>("DRAFT");
   const [projDesc, setProjDesc] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -111,6 +110,7 @@ export function ProjectsSection() {
         title: projTitle.trim(),
         genre: projGenre.trim(),
         description: projDesc,
+        status: projStatus,
       });
       await refresh();
       setEditingProject(null);
@@ -131,18 +131,12 @@ export function ProjectsSection() {
     setSaving(true);
     setError("");
     try {
-      const current = projects.find(
-        (project) => project.id === readingItem.projectId,
-      );
-      const isDraft =
-        current?.drafts.some((item) => item.id === readingItem.item.id) ??
-        false;
       const item = await saveChapter(
         readingItem.projectId,
         {
           title: editTitle.trim(),
           content: editContent,
-          status: isDraft ? "DRAFT" : "IN_REVIEW",
+          status: chapterStatus,
         },
         readingItem.item.id,
       );
@@ -184,7 +178,7 @@ export function ProjectsSection() {
       {loading ? (
         <p className="text-center py-10 text-sm">Carregando seus projetos…</p>
       ) : projects.length === 0 ? (
-        <p className="text-center py-10 text-sm text-stone-500">
+        <p className="text-center py-10 text-sm text-stone-600 dark:text-stone-400">
           Nenhum projeto criado ainda. Comece pelo Espaço de Escrita.
         </p>
       ) : (
@@ -217,11 +211,12 @@ export function ProjectsSection() {
                       aria-label={`Editar ${project.title}`}
                       onClick={() => {
                         setEditingProject(project);
+                        setProjStatus(project.status);
                         setProjTitle(project.title);
                         setProjGenre(project.genre || "");
                         setProjDesc(project.description || "");
                       }}
-                      className="p-1.5 text-stone-400"
+                      className="p-1.5 text-stone-600 dark:text-stone-400"
                     >
                       <Edit3 size={15} />
                     </button>
@@ -244,7 +239,7 @@ export function ProjectsSection() {
                           [project.id]: tab,
                         }))
                       }
-                      className={`pb-2 px-3 border-b-2 flex items-center gap-1.5 ${subTab === tab ? "border-[#4b1d3f] text-[#4b1d3f]" : "border-transparent text-stone-500"}`}
+                      className={`pb-2 px-3 border-b-2 flex items-center gap-1.5 ${subTab === tab ? "border-[#4b1d3f] text-[#4b1d3f] dark:border-pink-300 dark:text-pink-200" : "border-transparent text-stone-600 dark:text-stone-400"}`}
                     >
                       {tab === "chapters" ? (
                         <FileText size={14} />
@@ -252,7 +247,7 @@ export function ProjectsSection() {
                         <FileCode size={14} />
                       )}
                       {tab === "chapters" ? "Capítulos" : "Rascunhos"} (
-                      {items.length})
+                      {project[tab].length})
                     </button>
                   ))}
                 </div>
@@ -262,15 +257,16 @@ export function ProjectsSection() {
                       key={item.id}
                       onClick={() => {
                         setReadingItem({ projectId: project.id, item });
+                        setChapterStatus(item.status);
                         setEditTitle(item.title);
-                        setEditContent(toPlainText(item.content || ""));
+                        setEditContent(sanitizeHtml(item.content || ""));
                         setIsEditingMode(false);
                       }}
                       className="p-3 bg-white dark:bg-[#24172d] border rounded-2xl flex justify-between items-center text-xs cursor-pointer"
                     >
                       <div>
                         <h4 className="font-bold">{item.title}</h4>
-                        <p className="text-[10px] text-stone-500">
+                        <p className="text-[10px] text-stone-600 dark:text-stone-400">
                           {item.wordCount} palavras •{" "}
                           {item.updatedAt
                             ? new Date(item.updatedAt).toLocaleDateString(
@@ -285,8 +281,9 @@ export function ProjectsSection() {
                           onClick={(e) => {
                             e.stopPropagation();
                             setReadingItem({ projectId: project.id, item });
+                            setChapterStatus(item.status);
                             setEditTitle(item.title);
-                            setEditContent(toPlainText(item.content || ""));
+                            setEditContent(sanitizeHtml(item.content || ""));
                             setIsEditingMode(false);
                           }}
                           className="p-1.5"
@@ -306,7 +303,7 @@ export function ProjectsSection() {
                     </div>
                   ))}
                   {items.length === 0 && (
-                    <p className="text-center text-xs text-stone-400 py-4">
+                    <p className="text-center text-xs text-stone-600 dark:text-stone-400 py-4">
                       Nenhum item salvo.
                     </p>
                   )}
@@ -336,7 +333,7 @@ export function ProjectsSection() {
                   required
                   value={projTitle}
                   onChange={(e) => setProjTitle(e.target.value)}
-                  className="mt-1 w-full p-2.5 bg-white border rounded-xl"
+                  className="mt-1 w-full p-2.5 bg-white dark:bg-[#221a2b] border rounded-xl"
                 />
               </label>
               <label className="block font-bold">
@@ -344,7 +341,7 @@ export function ProjectsSection() {
                 <input
                   value={projGenre}
                   onChange={(e) => setProjGenre(e.target.value)}
-                  className="mt-1 w-full p-2.5 bg-white border rounded-xl"
+                  className="mt-1 w-full p-2.5 bg-white dark:bg-[#221a2b] border rounded-xl"
                 />
               </label>
               <label className="block font-bold">
@@ -352,8 +349,24 @@ export function ProjectsSection() {
                 <textarea
                   value={projDesc}
                   onChange={(e) => setProjDesc(e.target.value)}
-                  className="mt-1 w-full p-2.5 bg-white border rounded-xl"
+                  className="mt-1 w-full p-2.5 bg-white dark:bg-[#221a2b] border rounded-xl"
                 />
+              </label>
+              <label className="block font-bold">
+                Status do livro
+                <select
+                  className="mt-1 w-full p-2 border rounded-xl text-stone-900"
+                  value={projStatus}
+                  onChange={(event) =>
+                    setProjStatus(
+                      event.target.value as WritingProject["status"],
+                    )
+                  }
+                >
+                  <option value="DRAFT">Rascunho</option>
+                  <option value="IN_PROGRESS">Em andamento</option>
+                  <option value="COMPLETED">Concluído</option>
+                </select>
               </label>
               <div className="flex justify-end gap-2">
                 <button
@@ -412,11 +425,48 @@ export function ProjectsSection() {
                 </label>
                 <label className="flex-grow flex flex-col text-xs font-bold">
                   Conteúdo
-                  <textarea
-                    value={editContent}
-                    onChange={(e) => setEditContent(e.target.value)}
+                  <div
+                    contentEditable
+                    suppressContentEditableWarning
+                    role="textbox"
+                    aria-label="Conteúdo"
+                    aria-multiline="true"
                     className="mt-1 flex-grow min-h-64 w-full p-3 border rounded-xl font-serif"
+                    ref={(element) => {
+                      if (element && !element.dataset.initialized) {
+                        element.innerHTML = sanitizeHtml(editContent);
+                        element.dataset.initialized = "true";
+                      }
+                    }}
+                    onInput={(event) =>
+                      setEditContent(
+                        sanitizeHtml(event.currentTarget.innerHTML),
+                      )
+                    }
+                    onPaste={(event) => {
+                      event.preventDefault();
+                      document.execCommand(
+                        "insertText",
+                        false,
+                        event.clipboardData.getData("text/plain"),
+                      );
+                    }}
                   />
+                </label>
+                <label className="block font-bold">
+                  Status do capítulo
+                  <select
+                    className="mt-1 w-full p-2 border rounded-xl text-stone-900"
+                    value={chapterStatus}
+                    onChange={(event) =>
+                      setChapterStatus(event.target.value as Chapter["status"])
+                    }
+                  >
+                    <option value="DRAFT">Rascunho</option>
+                    <option value="IN_REVIEW">Em revisão</option>
+                    <option value="PUBLISHED">Publicado</option>
+                    <option value="ARCHIVED">Arquivado</option>
+                  </select>
                 </label>
                 <div className="flex justify-end gap-2">
                   <button
@@ -439,12 +489,15 @@ export function ProjectsSection() {
                 <h2 className="text-2xl font-serif font-bold text-center">
                   {readingItem.item.title}
                 </h2>
-                <div className="font-serif text-base leading-relaxed whitespace-pre-wrap">
-                  {toPlainText(readingItem.item.content || "")}
-                </div>
+                <div
+                  className="font-serif text-base leading-relaxed whitespace-pre-wrap"
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeHtml(readingItem.item.content || ""),
+                  }}
+                />
               </div>
             )}
-            <div className="pt-3 border-t text-xs text-stone-500">
+            <div className="pt-3 border-t text-xs text-stone-600 dark:text-stone-400">
               {readingItem.item.wordCount} palavras
             </div>
           </div>

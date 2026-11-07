@@ -1,5 +1,6 @@
 "use client";
 
+import { useWorkspaceSection } from "./WorkspaceProvider";
 import React, { useState, useEffect } from "react";
 import {
   Calendar,
@@ -12,7 +13,7 @@ import {
   BookOpen,
   Clock,
 } from "lucide-react";
-import { loadWritingProjects } from "@/lib/writing-api";
+import { loadStories } from "@/lib/writing-api";
 
 interface TimelineEvent {
   id: string;
@@ -31,31 +32,20 @@ interface ProjectMinimal {
 export function TimelineSection() {
   const [projects, setProjects] = useState<ProjectMinimal[]>([]);
 
+  const [selectedProjectId, setSelectedProjectId] = useState(() => "");
+
   useEffect(() => {
-    loadWritingProjects()
+    loadStories()
       .then((loaded) => {
         setProjects(loaded.map(({ id, title }) => ({ id, title })));
+        if (loaded[0]) setSelectedProjectId(loaded[0].id);
       })
       .catch(() => setProjects([]));
   }, []);
 
-  const [events, setEvents] = useState<TimelineEvent[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_timeline_events");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "capitulando_timeline_events",
-        JSON.stringify(events),
-      );
-    }
-  }, [events]);
-
-  const [selectedProjectId, setSelectedProjectId] = useState(
-    () => projects[0]?.id || "1",
+  const [events, setEvents] = useWorkspaceSection<TimelineEvent[]>(
+    "events",
+    [],
   );
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -92,8 +82,12 @@ export function TimelineSection() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProjectId) {
+      alert("Crie e selecione um livro primeiro.");
+      return;
+    }
     const newEvent: TimelineEvent = {
-      id: editingEventId || Date.now().toString(),
+      id: editingEventId || crypto.randomUUID(),
       projectId: selectedProjectId,
       yearOrDate: formData.yearOrDate || "Sem data",
       title: formData.title || "Evento sem título",
@@ -177,7 +171,7 @@ export function TimelineSection() {
                 <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handleOpenModal(event)}
-                    className="p-1.5 text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"
+                    className="p-1.5 text-stone-600 dark:text-stone-400 hover:text-[#4b1d3f] dark:hover:text-pink-300 rounded-lg transition-colors"
                     title="Editar Evento"
                   >
                     <Edit2 size={15} />
@@ -189,7 +183,7 @@ export function TimelineSection() {
                       ) &&
                       setEvents((prev) => prev.filter((i) => i.id !== event.id))
                     }
-                    className="p-1.5 text-red-400 hover:text-red-500 rounded-lg transition-colors"
+                    className="p-1.5 text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200 rounded-lg transition-colors"
                     title="Excluir Evento"
                   >
                     <Trash2 size={15} />
@@ -217,7 +211,7 @@ export function TimelineSection() {
         ))}
 
         {projectEvents.length === 0 && (
-          <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-10 text-center text-stone-500 dark:text-stone-400 space-y-2">
+          <div className="bg-[#fcf8f2] dark:bg-[#1a1321] border border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-10 text-center text-stone-600 dark:text-stone-400 space-y-2">
             <Clock
               size={32}
               className="mx-auto text-stone-400 dark:text-stone-600"
@@ -240,7 +234,7 @@ export function TimelineSection() {
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
+                className="text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-100"
               >
                 <X size={18} />
               </button>
@@ -249,10 +243,14 @@ export function TimelineSection() {
             <form onSubmit={handleSave} className="space-y-3 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                  <label
+                    htmlFor="timelinesection-field-1"
+                    className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                  >
                     Ano / Data / Época
                   </label>
                   <input
+                    id="timelinesection-field-1"
                     type="text"
                     required
                     value={formData.yearOrDate}
@@ -263,10 +261,14 @@ export function TimelineSection() {
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                  <label
+                    htmlFor="timelinesection-field-2"
+                    className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                  >
                     Título do Evento
                   </label>
                   <input
+                    id="timelinesection-field-2"
                     type="text"
                     required
                     value={formData.title}
@@ -279,10 +281,14 @@ export function TimelineSection() {
               </div>
 
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="timelinesection-field-3"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Personagens Envolvidos
                 </label>
                 <input
+                  id="timelinesection-field-3"
                   type="text"
                   value={formData.characters}
                   onChange={(e) =>
@@ -294,10 +300,14 @@ export function TimelineSection() {
               </div>
 
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="timelinesection-field-4"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Descrição do Evento
                 </label>
                 <textarea
+                  id="timelinesection-field-4"
                   rows={4}
                   required
                   value={formData.description}

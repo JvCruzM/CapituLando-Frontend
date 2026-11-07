@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { loadWritingProjects, type WritingProject } from "@/lib/writing-api";
 import { useAuthenticatedUser } from "@/components/auth/AuthGuard";
+import { useWorkspaceSection } from "@/components/dashboard/WorkspaceProvider";
+import { useTheme, type ThemeMode } from "@/components/theme/ThemeProvider";
 import { Sidebar } from "@/components/dashboard/Sidebar";
 import { CharactersSection } from "@/components/dashboard/CharactersSection";
 import { ProjectsSection } from "@/components/dashboard/ProjectsSection";
@@ -40,45 +42,79 @@ export default function Page() {
     authenticatedUser?.username ||
     authenticatedUser?.email?.split("@")[0] ||
     "Escritor(a)";
-  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
-
+  const [settings] = useWorkspaceSection<{
+    themeMode?: string;
+    fontSize?: string;
+    dailyReminder?: boolean;
+    reminderTime?: string;
+    goalAlerts?: boolean;
+  }>("settings", {});
+  const [profile] = useWorkspaceSection<{ name?: string }>("profile", {});
+  const { resolvedTheme, setTheme, theme } = useTheme();
+  const isDarkMode = resolvedTheme === "dark";
   const [projects, setProjects] = useState<WritingProject[]>([]);
-  const [activeProfileId] = useState<string>(() => {
-    if (typeof window === "undefined") return "default";
-    return (
-      window.sessionStorage.getItem("capitulando_active_profile") || "default"
-    );
-  });
-
+  const [apiError, setApiError] = useState("");
+  const activeProfileId = authenticatedUser!.id;
+  const [goals] = useWorkspaceSection<Goal[]>("goals", []);
+  const [ideas] = useWorkspaceSection<Idea[]>("ideas", []);
+  const [reminder, setReminder] = useState("");
   useEffect(() => {
-    loadWritingProjects()
-      .then(setProjects)
-      .catch(() => setProjects([]));
-  }, []);
-
-  const [goals] = useState<Goal[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_goals");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  const [ideas] = useState<Idea[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_ideas");
-    return saved ? JSON.parse(saved) : [];
-  });
-
+    const load = () => {
+      loadWritingProjects()
+        .then((value) => {
+          setProjects(value);
+          setApiError("");
+        })
+        .catch((reason) =>
+          setApiError(
+            reason instanceof Error
+              ? reason.message
+              : "Não foi possível carregar o painel.",
+          ),
+        );
+    };
+    load();
+    window.addEventListener("capitulando:data-changed", load);
+    return () => window.removeEventListener("capitulando:data-changed", load);
+  }, [activeTab]);
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const mq = window.matchMedia("(prefers-color-scheme: dark)");
-      const handler = (e: MediaQueryListEvent) => setIsDarkMode(e.matches);
-      mq.addEventListener("change", handler);
-      return () => mq.removeEventListener("change", handler);
-    }
-  }, []);
+    const savedTheme = settings.themeMode;
+    if (
+      savedTheme === "light" ||
+      savedTheme === "dark" ||
+      savedTheme === "system"
+    )
+      setTheme(savedTheme as ThemeMode);
+  }, [settings.themeMode, setTheme]);
+  useEffect(() => {
+    document.documentElement.style.fontSize =
+      settings.fontSize === "sm"
+        ? "14px"
+        : settings.fontSize === "lg"
+          ? "18px"
+          : "16px";
+    return () => {
+      document.documentElement.style.fontSize = "";
+    };
+  }, [settings.fontSize]);
+  useEffect(() => {
+    const check = () => {
+      if (!settings.dailyReminder) return;
+      const now = new Date();
+      const time = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      const key = `capitulando:${activeProfileId}:reminder:${now.toLocaleDateString()}`;
+      if (
+        time === (settings.reminderTime || "20:00") &&
+        !localStorage.getItem(key)
+      ) {
+        setReminder("Hora de escrever! Seu espaço de escrita está pronto.");
+        localStorage.setItem(key, "1");
+      }
+    };
+    check();
+    const timer = setInterval(check, 30_000);
+    return () => clearInterval(timer);
+  }, [settings.dailyReminder, settings.reminderTime, activeProfileId]);
 
   const totalBooks = projects.length;
   const completedGoals = goals.filter((g) => g.completed).length;
@@ -118,22 +154,33 @@ export default function Page() {
 
   return (
     <div
-      className={`flex min-h-screen ${isDarkMode ? "dark bg-[#120e17]" : "bg-[#f3ccde]"}`}
+      className={`flex flex-col md:flex-row min-h-screen ${isDarkMode ? "dark bg-[#120e17]" : "bg-[#f3ccde]"}`}
     >
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
       <main
-        className={`flex-1 p-6 md:p-8 space-y-6 overflow-y-auto transition-colors duration-300 ${isDarkMode ? "bg-[#120e17] text-stone-100" : "bg-[#f3ccde] text-stone-800"}`}
+        className={`flex-1 min-w-0 p-4 sm:p-6 md:p-8 space-y-6 overflow-y-auto transition-colors duration-300 ${isDarkMode ? "bg-[#120e17] text-stone-100" : "bg-[#f3ccde] text-stone-800"}`}
       >
-        <div className="flex justify-between items-center">
+        <div className="flex flex-wrap gap-2 justify-between items-center">
           <span className="text-[10px] font-bold uppercase tracking-wider text-[#4b1d3f] dark:text-pink-300 bg-white/60 dark:bg-[#2a2035] px-3 py-1 rounded-full border border-[#4b1d3f]/20">
             Escritório Literário
           </span>
           <span className="text-xs font-semibold text-stone-600 dark:text-stone-300 bg-white/80 dark:bg-[#221a2b] border border-[#4b1d3f]/20 dark:border-[#382b47] px-3 py-1.5 rounded-xl shadow-xs">
-            Tema do sistema ({isDarkMode ? "Escuro" : "Claro"})
+            {theme === "system" ? "Tema do sistema" : "Tema"} (
+            {isDarkMode ? "Escuro" : "Claro"})
           </span>
         </div>
 
+        {apiError && (
+          <p role="alert" className="text-red-700">
+            {apiError}
+          </p>
+        )}
+        {reminder && (
+          <p role="status" className="bg-amber-100 p-3 text-amber-950">
+            {reminder} <button onClick={() => setReminder("")}>Fechar</button>
+          </p>
+        )}
         {activeTab !== "painel" ? (
           renderSection()
         ) : (
@@ -145,7 +192,7 @@ export default function Page() {
                   <span>Sessão Privada Ativa</span>
                 </div>
                 <h1 className="text-2xl md:text-3xl font-bold font-serif">
-                  Boas-vindas, {userName}!
+                  Boas-vindas, {profile.name || userName}!
                 </h1>
                 <p className="text-xs md:text-sm leading-relaxed text-stone-600 dark:text-stone-300">
                   O seu santuário criativo está pronto. Acompanhe o progresso
@@ -166,48 +213,54 @@ export default function Page() {
               <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] p-5 rounded-2xl shadow-sm space-y-1">
                 <div className="flex justify-between items-center text-[#4b1d3f] dark:text-pink-300">
                   <BookOpen size={20} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 dark:text-stone-400">
                     Livros
                   </span>
                 </div>
                 <p className="text-2xl font-bold font-serif">{totalBooks}</p>
-                <p className="text-[11px] text-stone-500">Projetos criados</p>
+                <p className="text-[11px] text-stone-600 dark:text-stone-400">
+                  Projetos criados
+                </p>
               </div>
               <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] p-5 rounded-2xl shadow-sm space-y-1">
                 <div className="flex justify-between items-center text-[#4b1d3f] dark:text-pink-300">
                   <Feather size={20} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 dark:text-stone-400">
                     Escrita
                   </span>
                 </div>
                 <p className="text-2xl font-bold font-serif">
                   {totalWords.toLocaleString("pt-PT")}
                 </p>
-                <p className="text-[11px] text-stone-500">Palavras guardadas</p>
+                <p className="text-[11px] text-stone-600 dark:text-stone-400">
+                  Palavras guardadas
+                </p>
               </div>
               <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] p-5 rounded-2xl shadow-sm space-y-1">
                 <div className="flex justify-between items-center text-[#4b1d3f] dark:text-pink-300">
                   <Target size={20} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 dark:text-stone-400">
                     Metas
                   </span>
                 </div>
                 <p className="text-2xl font-bold font-serif">
                   {completedGoals}
                 </p>
-                <p className="text-[11px] text-stone-500">
+                <p className="text-[11px] text-stone-600 dark:text-stone-400">
                   Objetivos concluídos
                 </p>
               </div>
               <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] p-5 rounded-2xl shadow-sm space-y-1">
                 <div className="flex justify-between items-center text-[#4b1d3f] dark:text-pink-300">
                   <Lightbulb size={20} />
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-stone-600 dark:text-stone-400">
                     Ideias
                   </span>
                 </div>
                 <p className="text-2xl font-bold font-serif">{totalIdeas}</p>
-                <p className="text-[11px] text-stone-500">Notas e insights</p>
+                <p className="text-[11px] text-stone-600 dark:text-stone-400">
+                  Notas e insights
+                </p>
               </div>
             </div>
 
@@ -245,13 +298,13 @@ export default function Page() {
                             {proj.genre || "Geral"}
                           </span>
                         </div>
-                        <div className="p-2 bg-white dark:bg-[#1a1321] rounded-xl text-stone-400 group-hover:text-[#4b1d3f] dark:group-hover:text-pink-300 shadow-xs">
+                        <div className="p-2 bg-white dark:bg-[#1a1321] rounded-xl text-stone-600 dark:text-stone-400 group-hover:text-[#4b1d3f] dark:group-hover:text-pink-300 shadow-xs">
                           <ArrowRight size={16} />
                         </div>
                       </div>
                     ))
                   ) : (
-                    <div className="text-center py-8 text-stone-400 text-xs italic">
+                    <div className="text-center py-8 text-stone-600 dark:text-stone-400 text-xs italic">
                       Nenhum livro criado ainda. Vá ao Espaço de Escrita para
                       criar o seu primeiro livro!
                     </div>
@@ -278,8 +331,8 @@ export default function Page() {
                   </div>
                   <div>
                     <p className="text-xs font-bold">Sessão Protegida</p>
-                    <span className="text-[10px] text-stone-500">
-                      Armazenamento local isolado
+                    <span className="text-[10px] text-stone-600 dark:text-stone-400">
+                      Dados vinculados à sua conta
                     </span>
                   </div>
                 </div>

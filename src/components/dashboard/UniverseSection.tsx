@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 
+import { useWorkspaceSection } from "./WorkspaceProvider";
 import React, { useState, useEffect } from "react";
 import {
   Globe,
@@ -17,7 +18,7 @@ import {
   Check,
   BookOpen,
 } from "lucide-react";
-import { loadWritingProjects } from "@/lib/writing-api";
+import { loadStories } from "@/lib/writing-api";
 
 interface UniverseConcept {
   id: string;
@@ -39,9 +40,12 @@ interface ProjectMinimal {
 export function UniverseSection() {
   const [projects, setProjects] = useState<ProjectMinimal[]>([]);
 
+  const [selectedProjectId, setSelectedProjectId] = useState(() => "");
+
   useEffect(() => {
-    loadWritingProjects()
+    loadStories()
       .then((loaded) => {
+        if (loaded[0]) setSelectedProjectId(loaded[0].id);
         setProjects(
           loaded.map(({ id, title, genre }) => ({
             id,
@@ -53,24 +57,11 @@ export function UniverseSection() {
       .catch(() => setProjects([]));
   }, []);
 
-  const [concepts, setConcepts] = useState<UniverseConcept[]>(() => {
-    if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem("capitulando_universe_concepts");
-    return saved ? JSON.parse(saved) : [];
-  });
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem(
-        "capitulando_universe_concepts",
-        JSON.stringify(concepts),
-      );
-    }
-  }, [concepts]);
-
-  const [selectedProjectId, setSelectedProjectId] = useState(
-    () => projects[0]?.id || "1",
+  const [concepts, setConcepts] = useWorkspaceSection<UniverseConcept[]>(
+    "concepts",
+    [],
   );
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Todos");
 
@@ -137,8 +128,12 @@ export function UniverseSection() {
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProjectId) {
+      alert("Crie e selecione um livro primeiro.");
+      return;
+    }
     const item: UniverseConcept = {
-      id: editingId || Date.now().toString(),
+      id: editingId || crypto.randomUUID(),
       projectId: selectedProjectId,
       ...formData,
     };
@@ -203,7 +198,7 @@ export function UniverseSection() {
         <div className="relative w-full md:w-80">
           <Search
             size={16}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400"
+            className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-600 dark:text-stone-400"
           />
           <input
             type="text"
@@ -263,13 +258,13 @@ export function UniverseSection() {
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={(e) => handleOpenModal(item, e)}
-                      className="p-1 text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
+                      className="p-1 text-stone-600 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200"
                     >
                       <Edit2 size={14} />
                     </button>
                     <button
                       onClick={(e) => handleDelete(item.id, e)}
-                      className="p-1 text-red-400 hover:text-red-600"
+                      className="p-1 text-red-600 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200"
                     >
                       <Trash2 size={14} />
                     </button>
@@ -285,7 +280,7 @@ export function UniverseSection() {
                 </p>
               </div>
               {item.notes && (
-                <p className="text-[11px] text-stone-500 italic border-t border-stone-100 dark:border-stone-800 pt-2 font-serif">
+                <p className="text-[11px] text-stone-600 dark:text-stone-400 italic border-t border-stone-100 dark:border-stone-800 pt-2 font-serif">
                   <strong>Nota:</strong> {item.notes}
                 </p>
               )}
@@ -295,8 +290,11 @@ export function UniverseSection() {
       </div>
 
       {filteredConcepts.length === 0 && (
-        <div className="text-center py-16 bg-[#f3ccde]/20 dark:bg-[#1a1321] rounded-3xl border-2 border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] text-stone-500 space-y-2">
-          <Globe size={40} className="mx-auto text-stone-400" />
+        <div className="text-center py-16 bg-[#f3ccde]/20 dark:bg-[#1a1321] rounded-3xl border-2 border-dashed border-[#4b1d3f]/20 dark:border-[#382b47] text-stone-600 dark:text-stone-400 space-y-2">
+          <Globe
+            size={40}
+            className="mx-auto text-stone-600 dark:text-stone-400"
+          />
           <p className="text-sm font-semibold">Nenhum conceito encontrado.</p>
         </div>
       )}
@@ -335,14 +333,14 @@ export function UniverseSection() {
                 {!viewingConcept.imageUrl && (
                   <button
                     onClick={() => setViewingConcept(null)}
-                    className="p-1.5 text-stone-500"
+                    className="p-1.5 text-stone-600 dark:text-stone-400"
                   >
                     <X size={20} />
                   </button>
                 )}
               </div>
               {viewingConcept.region && (
-                <p className="text-xs text-stone-500 font-semibold">
+                <p className="text-xs text-stone-600 dark:text-stone-400 font-semibold">
                   <strong>Região:</strong> {viewingConcept.region}
                 </p>
               )}
@@ -373,17 +371,21 @@ export function UniverseSection() {
               </h3>
               <button
                 onClick={() => setIsModalOpen(false)}
-                className="text-stone-500"
+                className="text-stone-600 dark:text-stone-400"
               >
                 <X size={18} />
               </button>
             </div>
             <form onSubmit={handleSave} className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="universesection-field-1"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Nome
                 </label>
                 <input
+                  id="universesection-field-1"
                   type="text"
                   required
                   value={formData.title}
@@ -395,10 +397,14 @@ export function UniverseSection() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                  <label
+                    htmlFor="universesection-field-2"
+                    className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                  >
                     Categoria
                   </label>
                   <select
+                    id="universesection-field-2"
                     value={formData.category}
                     onChange={(e) =>
                       setFormData({
@@ -415,10 +421,14 @@ export function UniverseSection() {
                   </select>
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                  <label
+                    htmlFor="universesection-field-3"
+                    className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                  >
                     Região
                   </label>
                   <input
+                    id="universesection-field-3"
                     type="text"
                     value={formData.region}
                     onChange={(e) =>
@@ -429,10 +439,14 @@ export function UniverseSection() {
                 </div>
               </div>
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="universesection-field-4"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   URL da Imagem
                 </label>
                 <input
+                  id="universesection-field-4"
                   type="url"
                   value={formData.imageUrl}
                   onChange={(e) =>
@@ -442,10 +456,14 @@ export function UniverseSection() {
                 />
               </div>
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="universesection-field-5"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Descrição
                 </label>
                 <textarea
+                  id="universesection-field-5"
                   rows={4}
                   required
                   value={formData.description}
@@ -456,10 +474,14 @@ export function UniverseSection() {
                 />
               </div>
               <div>
-                <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">
+                <label
+                  htmlFor="universesection-field-6"
+                  className="block font-bold text-stone-700 dark:text-stone-300 mb-1"
+                >
                   Notas
                 </label>
                 <input
+                  id="universesection-field-6"
                   type="text"
                   value={formData.notes}
                   onChange={(e) =>

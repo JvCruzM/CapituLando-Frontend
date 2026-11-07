@@ -1,359 +1,422 @@
-'use client';
-
-import React, { useState, useEffect } from 'react';
-import { 
-  Settings, User, Moon, Sun, Bell, Database, Download, Upload, 
-  Trash2, Save, Check, ShieldCheck, KeyRound, Monitor 
-} from 'lucide-react';
-
+"use client";
+import { useState, type FormEvent, type ChangeEvent } from "react";
+import {
+  Settings as SettingsIcon,
+  UserRound,
+  Palette,
+  Bell,
+  Database,
+  Download,
+  Upload,
+  Trash2,
+  Save,
+} from "lucide-react";
+import { useTheme } from "@/components/theme/ThemeProvider";
+import { LegacyRecovery } from "./LegacyRecovery";
+import { apiRequest } from "@/lib/api";
+import { useAuthenticatedUser } from "@/components/auth/AuthGuard";
+import { useWorkspaceSection, useWorkspaceSync } from "./WorkspaceProvider";
+interface Settings {
+  themeMode: string;
+  fontSize: string;
+  dailyReminder: boolean;
+  reminderTime: string;
+  goalAlerts: boolean;
+}
 export function SettingsSection() {
-  // --- ESTADOS DA CONTA ---
-  const [userName, setUserName] = useState(() => {
-    if (typeof window === 'undefined') return 'Escritor(a)';
-    try {
-      const userRaw = sessionStorage.getItem('capitulando_user');
-      const currentUserName = localStorage.getItem('capitulando_user_name') || '';
-      if (userRaw) {
-        const userObj = JSON.parse(userRaw);
-        return userObj.name || userObj.username || currentUserName || 'Escritor(a)';
-      }
-      return currentUserName || 'Escritor(a)';
-    } catch {
-      return 'Escritor(a)';
-    }
+  const user = useAuthenticatedUser()!;
+  const { theme } = useTheme();
+  const [saved, setSettings] = useWorkspaceSection<Partial<Settings>>(
+    "settings",
+    {},
+  );
+  const [profile, setProfile] = useWorkspaceSection<{
+    name?: string;
+    [key: string]: unknown;
+  }>("profile", {});
+  const flush = useWorkspaceSync();
+  const [form, setForm] = useState<Settings>({
+    themeMode: theme,
+    fontSize: "md",
+    dailyReminder: false,
+    reminderTime: "20:00",
+    goalAlerts: true,
+    ...saved,
   });
-
-  const [userEmail, setUserEmail] = useState(() => {
-    if (typeof window === 'undefined') return 'autor@capitulando.com';
+  const [name, setName] = useState(profile.name || user.displayName);
+  const [email, setEmail] = useState(user.email);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [emailChanged, setEmailChanged] = useState(false);
+  const run = async (action: () => Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
+    setMessage("");
     try {
-      const userRaw = sessionStorage.getItem('capitulando_user');
-      if (userRaw) {
-        const userObj = JSON.parse(userRaw);
-        return userObj.email || 'autor@capitulando.com';
-      }
-      return 'autor@capitulando.com';
-    } catch {
-      return 'autor@capitulando.com';
+      await action();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Não foi possível concluir.",
+      );
+    } finally {
+      setBusy(false);
     }
-  });
-
-  // --- PREFERÊNCIAS DE INTERFACE ---
-  const [themeMode, setThemeMode] = useState<'system' | 'light' | 'dark'>('system');
-  const [fontSize, setFontSize] = useState<'sm' | 'md' | 'lg'>('md');
-
-  // --- NOTIFICAÇÕES & LEMBRETES ---
-  const [dailyReminder, setDailyReminder] = useState(true);
-  const [reminderTime, setReminderTime] = useState('20:00');
-  const [goalAlerts, setGoalAlerts] = useState(true);
-
-  // --- ESTADOS DE FEEDBACK ---
-  const [savedSuccess, setSavedSuccess] = useState(false);
-  const [importStatus, setImportStatus] = useState<string | null>(null);
-
-  // CARREGA OS DADOS INICIAIS DO UTILIZADOR E PREFERÊNCIAS
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-
-      // Carrega preferências salvas
-      const savedSettings = localStorage.getItem('capitulando_settings');
-      if (savedSettings) {
-        try {
-          const config = JSON.parse(savedSettings);
-          setThemeMode(config.themeMode || 'system');
-          setFontSize(config.fontSize || 'md');
-          setDailyReminder(config.dailyReminder ?? true);
-          setReminderTime(config.reminderTime || '20:00');
-          setGoalAlerts(config.goalAlerts ?? true);
-        } catch (e) {
-          console.warn('Erro ao carregar configurações salvas', e);
+  };
+  const save = (event: FormEvent) => {
+    event.preventDefault();
+    void run(async () => {
+      setSettings(form);
+      setProfile({ ...profile, name: name.trim() });
+      if (!(await flush()))
+        throw new Error(
+          "Existem alterações pendentes. Tente sincronizar antes de continuar.",
+        );
+      if (email.trim().toLowerCase() !== user.email) {
+        await apiRequest("/auth/change-email", {
+          method: "POST",
+          body: JSON.stringify({
+            email: email.trim(),
+            currentPassword: password,
+          }),
+        });
+        sessionStorage.removeItem("capitulando_access_token");
+        sessionStorage.removeItem("capitulando_user");
+        setEmailChanged(true);
+        setMessage(
+          "Confirme o novo e-mail e entre novamente. Seus dados foram preservados.",
+        );
+      } else setMessage("Configurações salvas e sincronizadas.");
+      setPassword("");
+    });
+  };
+  const exportData = () =>
+    void run(async () => {
+      if (!(await flush()))
+        throw new Error(
+          "Sincronize as alterações pendentes antes de exportar.",
+        );
+      const backup = await apiRequest<{
+        records: Record<string, { id: string }[]>;
+        workspace: Record<string, { revision: number; value: unknown }>;
+      }>("/backup");
+      const localDraft = localStorage.getItem(`capitulando:${user.id}:writing`);
+      if (localDraft) {
+        const recovery = JSON.parse(localDraft);
+        if (
+          recovery.projectId &&
+          !backup.records.Story.some((story) => story.id === recovery.projectId)
+        ) {
+          delete recovery.projectId;
+          delete recovery.chapterId;
         }
+        backup.workspace.writing = { revision: 0, value: recovery };
       }
-    }
-  }, []);
-
-  // SALVAR CONFIGURAÇÕES
-  const handleSaveSettings = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (typeof window !== 'undefined') {
-      const config = {
-        themeMode,
-        fontSize,
-        dailyReminder,
-        reminderTime,
-        goalAlerts,
-      };
-
-      localStorage.setItem('capitulando_settings', JSON.stringify(config));
-      localStorage.setItem('capitulando_user_name', userName);
-
-      // Atualiza também o objeto da sessão se existir
-      const userRaw = sessionStorage.getItem('capitulando_user');
-      if (userRaw) {
-        try {
-          const userObj = JSON.parse(userRaw);
-          userObj.name = userName;
-          userObj.email = userEmail;
-          sessionStorage.setItem('capitulando_user', JSON.stringify(userObj));
-        } catch (e) {}
-      }
-    }
-
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+      const blob = new Blob([JSON.stringify(backup, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `capitulando-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMessage("Backup completo exportado.");
+    });
+  const clearRecovery = () => {
+    const prefix = `capitulando:${user.id}:`;
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith(prefix))
+      .forEach((key) => localStorage.removeItem(key));
   };
-
-  // EXPORTAR BACKUP DOS DADOS
-  const handleExportData = () => {
-    if (typeof window === 'undefined') return;
-
-    const dataBackup = {
-      projects: JSON.parse(localStorage.getItem('capitulando_projects') || '[]'),
-      concepts: JSON.parse(localStorage.getItem('capitulando_universe_concepts') || '[]'),
-      events: JSON.parse(localStorage.getItem('capitulando_timeline_events') || '[]'),
-      profile: JSON.parse(localStorage.getItem('capitulando_author_profile') || '{}'),
-      exportedAt: new Date().toISOString(),
-    };
-
-    const blob = new Blob([JSON.stringify(dataBackup, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backup_capitulando_${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  // IMPORTAR BACKUP DE FICHEIRO JSON
-  const handleImportData = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const importData = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-
-        if (json.projects) localStorage.setItem('capitulando_projects', JSON.stringify(json.projects));
-        if (json.concepts) localStorage.setItem('capitulando_universe_concepts', JSON.stringify(json.concepts));
-        if (json.events) localStorage.setItem('capitulando_timeline_events', JSON.stringify(json.events));
-        if (json.profile) localStorage.setItem('capitulando_author_profile', JSON.stringify(json.profile));
-
-        setImportStatus('Backup restaurado com sucesso! Recarregue a página para ver as alterações.');
-        setTimeout(() => setImportStatus(null), 4000);
-      } catch (err) {
-        setImportStatus('Erro ao ler o ficheiro de backup. Certifique-se de usar um ficheiro .json válido.');
-        setTimeout(() => setImportStatus(null), 4000);
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  // LIMPAR DADOS DA APLICAÇÃO
-  const handleClearData = () => {
-    if (confirm('Tem a certeza de que deseja apagar todos os dados guardados localmente? Esta ação não pode ser desfeita.')) {
-      localStorage.removeItem('capitulando_projects');
-      localStorage.removeItem('capitulando_universe_concepts');
-      localStorage.removeItem('capitulando_timeline_events');
-      localStorage.removeItem('capitulando_author_profile');
-      localStorage.removeItem('capitulando_writing_space');
-      alert('Dados limpos com sucesso!');
+    void run(async () => {
+      if (file.size > 25_000_000)
+        throw new Error("O backup deve ter no máximo 25 MB.");
+      const backup = JSON.parse(await file.text());
+      if (backup.schemaVersion !== 1 || !backup.records || !backup.workspace)
+        throw new Error("Formato de backup incompatível.");
+      if (
+        !confirm(
+          "Restaurar este backup substituindo o conteúdo desta conta? Exporte o conteúdo atual antes de continuar.",
+        )
+      )
+        return;
+      if (!(await flush()))
+        throw new Error("Sincronize as alterações antes de restaurar.");
+      await apiRequest("/backup", {
+        method: "POST",
+        body: JSON.stringify(backup),
+      });
+      clearRecovery();
       window.location.reload();
-    }
+    });
   };
-
+  const clearData = () =>
+    void run(async () => {
+      if (
+        !confirm(
+          "Apagar livros, capítulos, personagens, metas, ideias, universo e timeline desta conta? Esta ação não pode ser desfeita. Exporte um backup primeiro.",
+        )
+      )
+        return;
+      if (!(await flush()))
+        throw new Error("Sincronize as alterações antes de apagar.");
+      await apiRequest("/backup", { method: "DELETE" });
+      clearRecovery();
+      window.location.reload();
+    });
+  const box =
+    "rounded-3xl border-2 border-[#4b1d3f]/20 dark:border-[#382b47] p-5 sm:p-6 bg-[#fcf8f2] dark:bg-[#1a1321] shadow-sm space-y-5 min-w-0";
+  const field =
+    "mt-2 block w-full rounded-xl border border-[#4b1d3f]/20 dark:border-[#382b47] bg-white dark:bg-[#221a2b] px-4 py-3 text-sm text-stone-900 dark:text-stone-100 outline-none focus:ring-2 focus:ring-[#b88ba8] disabled:opacity-60";
+  const heading =
+    "flex items-center gap-2 font-serif text-lg font-bold text-[#4b1d3f] dark:text-pink-200";
+  const button =
+    "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-xs font-bold transition disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#b88ba8]";
   return (
-    <div className="space-y-6 font-sans">
-      {/* CABEÇALHO */}
-      <div className="bg-[#f3ccde]/60 dark:bg-[#221a2b] p-5 rounded-2xl border-2 border-[#4b1d3f]/20 dark:border-[#382b47] flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="p-3 bg-[#f3ccde] dark:bg-[#2a2035] text-[#4b1d3f] dark:text-pink-300 rounded-xl border border-[#4b1d3f]/30">
-            <Settings size={28} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold font-serif text-stone-900 dark:text-stone-100">Configurações da Conta & Sistema</h2>
-            <p className="text-xs text-stone-600 dark:text-stone-400">Personalize a sua experiência, lembretes e gerencie os seus dados locais.</p>
-          </div>
+    <div className="space-y-6 text-stone-800 dark:text-stone-200">
+      <div className="flex items-center gap-3">
+        <div className="rounded-2xl bg-[#f3ccde]/60 dark:bg-[#382b47] p-3 text-[#4b1d3f] dark:text-pink-200">
+          <SettingsIcon size={24} />
+        </div>
+        <div>
+          <h2 className="font-serif text-2xl font-bold">Configurações</h2>
+          <p className="mt-1 text-xs text-stone-600 dark:text-stone-400">
+            Deixe seu espaço de escrita com a sua cara.
+          </p>
         </div>
       </div>
-
-      {/* ALERTA DE SUCESSO */}
-      {savedSuccess && (
-        <div className="bg-emerald-100 border border-emerald-300 text-emerald-800 px-4 py-3 rounded-2xl text-xs font-bold flex items-center gap-2">
-          <Check size={18} /> <span>Configurações atualizadas com sucesso!</span>
-        </div>
+      {message && (
+        <p
+          role="status"
+          className="rounded-2xl border border-[#4b1d3f]/20 dark:border-[#382b47] bg-[#f3ccde]/40 dark:bg-[#221a2b] p-4 text-sm"
+        >
+          {message}{" "}
+          {emailChanged && (
+            <a href="/login" className="font-bold underline">
+              Entrar
+            </a>
+          )}
+        </p>
       )}
-
-      {importStatus && (
-        <div className="bg-amber-100 border border-amber-300 text-amber-900 px-4 py-3 rounded-2xl text-xs font-bold flex items-center gap-2">
-          <Database size={18} /> <span>{importStatus}</span>
-        </div>
-      )}
-
-      <form onSubmit={handleSaveSettings} className="space-y-6">
-        {/* 1. DADOS DA CONTA */}
-        <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-6 shadow-sm space-y-4">
-          <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 border-b border-[#4b1d3f]/15 dark:border-[#382b47] pb-3 flex items-center gap-2">
-            <User size={18} className="text-[#4b1d3f] dark:text-pink-400" />
-            <span>Dados da Conta (Integração Login)</span>
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
-            <div>
-              <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">Nome de Exibição</label>
-              <input 
-                type="text" 
-                value={userName} 
-                onChange={(e) => setUserName(e.target.value)} 
-                className="w-full p-2.5 bg-stone-50 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none" 
+      <form onSubmit={save} className="space-y-6">
+        <div className="grid items-start gap-6 lg:grid-cols-2">
+          <fieldset
+            disabled={busy || emailChanged}
+            className={box}
+            aria-labelledby="settings-account"
+          >
+            <h3 id="settings-account" className={heading}>
+              <UserRound size={20} /> Sua conta
+            </h3>
+            <p className="text-xs text-stone-600 dark:text-stone-400">
+              Atualize como você aparece e o endereço usado para entrar.
+            </p>
+            <label className="block text-xs font-bold">
+              Nome de exibição
+              <input
+                className={field}
+                required
+                maxLength={100}
+                autoComplete="nickname"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
               />
-            </div>
-            <div>
-              <label className="block font-bold text-stone-700 dark:text-stone-300 mb-1">E-mail Registo</label>
-              <input 
-                type="email" 
-                value={userEmail} 
-                onChange={(e) => setUserEmail(e.target.value)} 
-                className="w-full p-2.5 bg-stone-50 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-100 focus:outline-none" 
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* 2. PREFERÊNCIAS DE INTERFACE & TEMA */}
-        <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-6 shadow-sm space-y-4">
-          <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 border-b border-[#4b1d3f]/15 dark:border-[#382b47] pb-3 flex items-center gap-2">
-            <Monitor size={18} className="text-[#4b1d3f] dark:text-pink-400" />
-            <span>Aparência & Apresentação</span>
-          </h3>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-            {/* TEMA */}
-            <div className="space-y-2">
-              <label className="block font-bold text-stone-700 dark:text-stone-300">Modo de Aparição</label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('light')}
-                  className={`p-3 rounded-2xl border flex flex-col items-center gap-1 font-bold ${themeMode === 'light' ? 'bg-[#4b1d3f] text-white border-[#4b1d3f]' : 'bg-stone-50 dark:bg-[#221a2b] text-stone-700 dark:text-stone-300 border-stone-200 dark:border-[#382b47]'}`}
-                >
-                  <Sun size={18} /> Claro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('dark')}
-                  className={`p-3 rounded-2xl border flex flex-col items-center gap-1 font-bold ${themeMode === 'dark' ? 'bg-[#4b1d3f] text-white border-[#4b1d3f]' : 'bg-stone-50 dark:bg-[#221a2b] text-stone-700 dark:text-stone-300 border-stone-200 dark:border-[#382b47]'}`}
-                >
-                  <Moon size={18} /> Escuro
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setThemeMode('system')}
-                  className={`p-3 rounded-2xl border flex flex-col items-center gap-1 font-bold ${themeMode === 'system' ? 'bg-[#4b1d3f] text-white border-[#4b1d3f]' : 'bg-stone-50 dark:bg-[#221a2b] text-stone-700 dark:text-stone-300 border-stone-200 dark:border-[#382b47]'}`}
-                >
-                  <Monitor size={18} /> Sistema
-                </button>
-              </div>
-            </div>
-
-            {/* TAMANHO DE FONTE DA APLICAÇÃO */}
-            <div className="space-y-2">
-              <label className="block font-bold text-stone-700 dark:text-stone-300">Tamanho Padrão da Fonte</label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['sm', 'md', 'lg'] as const).map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    onClick={() => setFontSize(size)}
-                    className={`p-3 rounded-2xl border font-bold capitalize ${fontSize === size ? 'bg-[#4b1d3f] text-white border-[#4b1d3f]' : 'bg-stone-50 dark:bg-[#221a2b] text-stone-700 dark:text-stone-300 border-stone-200 dark:border-[#382b47]'}`}
-                  >
-                    {size === 'sm' ? 'Pequeno' : size === 'md' ? 'Médio' : 'Grande'}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. LEMBRETES & NOTIFICAÇÕES */}
-        <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-6 shadow-sm space-y-4">
-          <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 border-b border-[#4b1d3f]/15 dark:border-[#382b47] pb-3 flex items-center gap-2">
-            <Bell size={18} className="text-[#4b1d3f] dark:text-pink-400" />
-            <span>Hábitos & Notificações de Escrita</span>
-          </h3>
-
-          <div className="space-y-3 text-xs">
-            <div className="flex items-center justify-between p-3 bg-stone-50 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-2xl">
-              <div>
-                <p className="font-bold text-stone-800 dark:text-stone-200">Lembrete Diário de Escrita</p>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400">Receba um alerta suave para manter o seu hábito diário ativo.</p>
-              </div>
-              <input 
-                type="checkbox" 
-                checked={dailyReminder} 
-                onChange={(e) => setDailyReminder(e.target.checked)} 
-                className="w-4 h-4 accent-[#4b1d3f] cursor-pointer" 
-              />
-            </div>
-
-            {dailyReminder && (
-              <div className="flex items-center justify-between p-3 bg-stone-50 dark:bg-[#221a2b] border border-stone-200 dark:border-[#382b47] rounded-2xl">
-                <span className="font-bold text-stone-800 dark:text-stone-200">Horário do Lembrete</span>
-                <input 
-                  type="time" 
-                  value={reminderTime} 
-                  onChange={(e) => setReminderTime(e.target.value)} 
-                  className="p-1.5 bg-white dark:bg-[#1a1321] border border-stone-300 dark:border-[#382b47] rounded-xl text-stone-800 dark:text-stone-200 font-bold"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* 4. GESTÃO DE DADOS LOCAL & BACKUP */}
-        <div className="bg-white dark:bg-[#1a1321] border-2 border-[#4b1d3f]/20 dark:border-[#382b47] rounded-3xl p-6 shadow-sm space-y-4">
-          <h3 className="font-serif font-bold text-base text-stone-900 dark:text-stone-100 border-b border-[#4b1d3f]/15 dark:border-[#382b47] pb-3 flex items-center gap-2">
-            <Database size={18} className="text-[#4b1d3f] dark:text-pink-400" />
-            <span>Gerenciamento de Dados & Cópias de Segurança</span>
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-            <button
-              type="button"
-              onClick={handleExportData}
-              className="p-3 bg-stone-50 dark:bg-[#221a2b] hover:bg-[#f3ccde]/40 border border-stone-200 dark:border-[#382b47] rounded-2xl flex items-center justify-center gap-2 font-bold text-stone-800 dark:text-stone-200 transition-colors"
-            >
-              <Download size={16} className="text-[#4b1d3f] dark:text-pink-400" />
-              <span>Exportar Backup (.JSON)</span>
-            </button>
-
-            <label className="p-3 bg-stone-50 dark:bg-[#221a2b] hover:bg-[#f3ccde]/40 border border-stone-200 dark:border-[#382b47] rounded-2xl flex items-center justify-center gap-2 font-bold text-stone-800 dark:text-stone-200 cursor-pointer transition-colors">
-              <Upload size={16} className="text-[#4b1d3f] dark:text-pink-400" />
-              <span>Importar Backup</span>
-              <input type="file" accept=".json" onChange={handleImportData} className="hidden" />
             </label>
-
-            <button
-              type="button"
-              onClick={handleClearData}
-              className="p-3 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 border border-red-200 dark:border-red-900/40 rounded-2xl flex items-center justify-center gap-2 font-bold text-red-600 dark:text-red-300 transition-colors"
-            >
-              <Trash2 size={16} />
-              <span>Resetar Dados Locais</span>
-            </button>
-          </div>
+            <label className="block text-xs font-bold">
+              E-mail
+              <input
+                className={field}
+                required
+                type="email"
+                autoComplete="email"
+                maxLength={320}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </label>
+            {email.trim().toLowerCase() !== user.email && (
+              <label className="block text-xs font-bold">
+                Senha atual para alterar o e-mail
+                <input
+                  className={field}
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <span className="mt-2 block font-normal text-stone-600 dark:text-stone-400">
+                  O novo endereço precisará ser confirmado.
+                </span>
+              </label>
+            )}
+          </fieldset>
+          <fieldset
+            disabled={busy || emailChanged}
+            className={box}
+            aria-labelledby="settings-appearance"
+          >
+            <h3 id="settings-appearance" className={heading}>
+              <Palette size={20} /> Aparência
+            </h3>
+            <p className="text-xs text-stone-600 dark:text-stone-400">
+              Escolha a combinação mais confortável para escrever.
+            </p>
+            <label className="block text-xs font-bold">
+              Tema
+              <select
+                className={field}
+                value={form.themeMode}
+                onChange={(e) =>
+                  setForm({ ...form, themeMode: e.target.value })
+                }
+              >
+                <option value="system">Sistema</option>
+                <option value="light">Claro</option>
+                <option value="dark">Escuro</option>
+              </select>
+            </label>
+            <label className="block text-xs font-bold">
+              Tamanho da fonte
+              <select
+                className={field}
+                value={form.fontSize}
+                onChange={(e) => setForm({ ...form, fontSize: e.target.value })}
+              >
+                <option value="sm">Pequeno</option>
+                <option value="md">Médio</option>
+                <option value="lg">Grande</option>
+              </select>
+            </label>
+          </fieldset>
         </div>
-
-        {/* BOTAO SALVAR */}
-        <div className="flex justify-end pt-2">
+        <fieldset
+          disabled={busy || emailChanged}
+          className={box}
+          aria-labelledby="settings-reminders"
+        >
+          <h3 id="settings-reminders" className={heading}>
+            <Bell size={20} /> Lembretes e metas
+          </h3>
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl bg-white dark:bg-[#221a2b] p-4 text-xs">
+            <span>
+              <span className="block font-bold">
+                Lembrete diário enquanto o aplicativo estiver aberto
+              </span>
+              <span className="mt-1 block text-stone-600 dark:text-stone-400">
+                Reserve um momento para continuar sua história.
+              </span>
+            </span>
+            <input
+              className="h-5 w-5 shrink-0 accent-[#4b1d3f] dark:accent-pink-400"
+              type="checkbox"
+              checked={form.dailyReminder}
+              onChange={(e) =>
+                setForm({ ...form, dailyReminder: e.target.checked })
+              }
+            />
+          </label>
+          {form.dailyReminder && (
+            <label className="block max-w-xs text-xs font-bold">
+              Horário
+              <input
+                className={field}
+                type="time"
+                required
+                value={form.reminderTime}
+                onChange={(e) =>
+                  setForm({ ...form, reminderTime: e.target.value })
+                }
+              />
+            </label>
+          )}
+          <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl bg-white dark:bg-[#221a2b] p-4 text-xs">
+            <span className="font-bold">
+              Mostrar aviso ao concluir uma meta
+            </span>
+            <input
+              className="h-5 w-5 shrink-0 accent-[#4b1d3f] dark:accent-pink-400"
+              type="checkbox"
+              checked={form.goalAlerts}
+              onChange={(e) =>
+                setForm({ ...form, goalAlerts: e.target.checked })
+              }
+            />
+          </label>
+        </fieldset>
+        <div className="flex justify-end">
           <button
-            type="submit"
-            className="px-6 py-3 bg-[#4b1d3f] hover:bg-[#38142f] dark:bg-pink-800 dark:hover:bg-pink-900 text-white rounded-2xl text-xs font-bold flex items-center gap-2 shadow-md transition-all active:scale-95"
+            className={`${button} bg-[#4b1d3f] hover:bg-[#38142f] dark:bg-pink-800 dark:hover:bg-pink-900 text-white shadow-sm`}
+            disabled={busy || emailChanged}
           >
             <Save size={16} />
-            <span>Salvar Todas as Configurações</span>
+            {busy ? "Salvando…" : "Salvar configurações"}
           </button>
         </div>
       </form>
+      <LegacyRecovery />
+      <fieldset
+        disabled={busy || emailChanged}
+        className={box}
+        aria-labelledby="settings-backup"
+      >
+        <h3 id="settings-backup" className={heading}>
+          <Database size={20} /> Backup e dados da conta
+        </h3>
+        <p className="text-xs leading-relaxed text-stone-600 dark:text-stone-400">
+          Guarde uma cópia dos seus livros, capítulos, personagens,
+          relacionamentos, metas, ideias, universo, timeline, perfil e
+          preferências. Senhas e sessões não são exportadas.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-[#4b1d3f]/10 dark:border-[#382b47] bg-white dark:bg-[#221a2b] p-4 space-y-3">
+            <p className="text-xs text-stone-600 dark:text-stone-400">
+              Baixe seus dados para guardar uma cópia de segurança.
+            </p>
+            <button
+              onClick={exportData}
+              className={`${button} bg-[#f3ccde]/60 dark:bg-[#382b47] text-[#4b1d3f] dark:text-pink-200 hover:bg-[#f3ccde]`}
+            >
+              <Download size={16} />
+              Exportar backup completo
+            </button>
+          </div>
+          <div className="rounded-2xl border border-[#4b1d3f]/10 dark:border-[#382b47] bg-white dark:bg-[#221a2b] p-4 space-y-3">
+            <label className="block text-xs font-bold">
+              <span className="flex items-center gap-2">
+                <Upload size={16} />
+                Restaurar backup
+              </span>
+              <input
+                className="mt-3 block w-full min-w-0 text-xs file:mr-3 file:rounded-xl file:border-0 file:bg-[#f3ccde]/60 file:px-3 file:py-2 file:text-xs file:font-bold file:text-[#4b1d3f] disabled:opacity-50"
+                type="file"
+                accept=".json,application/json"
+                onChange={importData}
+              />
+            </label>
+            <p className="text-xs text-stone-600 dark:text-stone-400">
+              A restauração substitui o conteúdo atual desta conta.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 border-t border-[#4b1d3f]/10 dark:border-[#382b47] pt-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-xs text-stone-600 dark:text-stone-400">
+            Para recomeçar, exporte seu backup antes de apagar os dados.
+          </p>
+          <button
+            onClick={clearData}
+            className={`${button} shrink-0 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40`}
+          >
+            <Trash2 size={16} />
+            Apagar conteúdo desta conta
+          </button>
+        </div>
+      </fieldset>
     </div>
   );
 }

@@ -6,9 +6,20 @@ export default defineConfig([
   ...nextVitals,
   ...nextTs,
   {
+    files: ["src/**/*.{ts,tsx}"],
     rules: {
       "react-hooks/set-state-in-effect": "warn",
     },
   },
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  {
+    files: ["tests/support/**/*.cjs"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
+  globalIgnores([
+    ".next/**",
+    ".next-e2e/**",
+    "out/**",
+    "build/**",
+    "next-env.d.ts",
+  ]),
 ]);
