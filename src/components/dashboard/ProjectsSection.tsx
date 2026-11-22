@@ -1,6 +1,7 @@
 "use client";
 
 import { sanitizeHtml } from "@/lib/html";
+import { ApiError } from "@/lib/api";
 import React, { useEffect, useState } from "react";
 import {
   BookOpen,
@@ -47,6 +48,7 @@ export function ProjectsSection() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [itemConflict, setItemConflict] = useState(false);
 
   const refresh = async () => setProjects(await loadWritingProjects());
   useEffect(() => {
@@ -125,9 +127,9 @@ export function ProjectsSection() {
     }
   };
 
-  const saveItem = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!readingItem) return;
+  const saveItem = async (event?: React.FormEvent, asCopy = false) => {
+    event?.preventDefault();
+    if (!readingItem || saving) return;
     setSaving(true);
     setError("");
     try {
@@ -136,14 +138,24 @@ export function ProjectsSection() {
         {
           title: editTitle.trim(),
           content: editContent,
-          status: chapterStatus,
+          status: asCopy ? "DRAFT" : chapterStatus,
+          revision: asCopy ? undefined : readingItem.item.revision,
         },
-        readingItem.item.id,
+        asCopy ? undefined : readingItem.item.id,
       );
       setReadingItem({ ...readingItem, item });
+      setItemConflict(false);
+      if (asCopy) {
+        setChapterStatus("DRAFT");
+        setActiveTabMap((previous) => ({
+          ...previous,
+          [readingItem.projectId]: "drafts",
+        }));
+      }
       await refresh();
       setIsEditingMode(false);
     } catch (err) {
+      setItemConflict(err instanceof ApiError && err.status === 409);
       setError(
         err instanceof Error
           ? err.message
@@ -167,7 +179,7 @@ export function ProjectsSection() {
           </p>
         </div>
       </div>
-      {error && (
+      {error && !readingItem && (
         <p
           role="alert"
           className="rounded-xl bg-red-100 p-3 text-sm text-red-800"
@@ -257,6 +269,8 @@ export function ProjectsSection() {
                       key={item.id}
                       onClick={() => {
                         setReadingItem({ projectId: project.id, item });
+                        setError("");
+                        setItemConflict(false);
                         setChapterStatus(item.status);
                         setEditTitle(item.title);
                         setEditContent(sanitizeHtml(item.content || ""));
@@ -281,6 +295,8 @@ export function ProjectsSection() {
                           onClick={(e) => {
                             e.stopPropagation();
                             setReadingItem({ projectId: project.id, item });
+                            setError("");
+                            setItemConflict(false);
                             setChapterStatus(item.status);
                             setEditTitle(item.title);
                             setEditContent(sanitizeHtml(item.content || ""));
@@ -409,6 +425,24 @@ export function ProjectsSection() {
                 </button>
               </div>
             </div>
+            {error && (
+              <div
+                role="alert"
+                className="rounded-xl bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-100"
+              >
+                {error}
+                {isEditingMode && itemConflict && (
+                  <button
+                    type="button"
+                    disabled={saving}
+                    className="mt-3 block rounded-xl border border-current px-3 py-2 font-bold disabled:opacity-50"
+                    onClick={() => void saveItem(undefined, true)}
+                  >
+                    Salvar edição como novo rascunho
+                  </button>
+                )}
+              </div>
+            )}
             {isEditingMode ? (
               <form
                 onSubmit={saveItem}

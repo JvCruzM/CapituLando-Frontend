@@ -84,6 +84,8 @@ Os dados são vinculados à conta autenticada e sincronizados com o backend. O e
 
 Se houver conflito entre sessões, a interface permite escolher entre a cópia local e os dados do servidor. A restauração de backup substitui o conteúdo da conta; exporte uma cópia antes de restaurar ou apagar os dados.
 
+Ao editar capítulos e rascunhos, o frontend envia a revisão da versão carregada. Se outra sessão já tiver salvo, a API retorna um conflito e o editor preserva o texto local. No Espaço de Escrita é possível salvar essa cópia como novo rascunho ou confirmar o descarte e carregar a versão atual. O editor de Projetos / Livros também apresenta o conflito e permite guardar a edição como novo rascunho. A revisão acompanha a recuperação local, evitando sobrescrever alterações após recarregar a página. Esta versão requer o backend com a migração V8; outros clientes que atualizam capítulos também devem enviar `revision`.
+
 A escolha de tema das páginas públicas permanece no navegador. Ao entrar, uma preferência já salva na conta tem prioridade. Lembretes de escrita funcionam enquanto o aplicativo está aberto.
 
 ## Comandos

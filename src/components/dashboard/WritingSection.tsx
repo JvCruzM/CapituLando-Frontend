@@ -1,6 +1,7 @@
 "use client";
 
 import { sanitizeHtml, textToHtml } from "@/lib/html";
+import { ApiError, apiRequest } from "@/lib/api";
 import { useWorkspaceSection } from "./WorkspaceProvider";
 import { useAuthenticatedUser } from "@/components/auth/AuthGuard";
 import React, { useState, useEffect, useRef } from "react";
@@ -8,6 +9,7 @@ import {
   createStory,
   loadWritingProjects,
   saveChapter,
+  type Chapter,
   type WritingProject,
 } from "@/lib/writing-api";
 import {
@@ -45,6 +47,7 @@ export function WritingSpace() {
     title?: string;
     projectId?: string;
     chapterId?: string;
+    chapterRevision?: number;
     type?: "chapter" | "draft";
   };
   const [remoteRecovery, setRemoteRecovery] = useWorkspaceSection<Recovery>(
@@ -58,6 +61,7 @@ export function WritingSpace() {
     title?: string;
     projectId?: string;
     chapterId?: string;
+    chapterRevision?: number;
     type?: "chapter" | "draft";
   }>(() => {
     try {
@@ -106,6 +110,10 @@ export function WritingSpace() {
   const [editingItemId, setEditingItemId] = useState<string | null>(
     recovered.chapterId || null,
   );
+  const [editingRevision, setEditingRevision] = useState<number | undefined>(
+    recovered.chapterRevision,
+  );
+  const [chapterConflict, setChapterConflict] = useState(false);
 
   const [isNewModalOpen, setIsNewModalOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
@@ -128,6 +136,7 @@ export function WritingSpace() {
             title,
             projectId: selectedProjectId,
             chapterId: editingItemId,
+            chapterRevision: editingRevision,
             type: exportType,
           }),
         );
@@ -152,6 +161,7 @@ export function WritingSpace() {
     title,
     selectedProjectId,
     editingItemId,
+    editingRevision,
     exportType,
     isSaved,
     recoveryKey,
@@ -165,6 +175,7 @@ export function WritingSpace() {
           title,
           projectId: selectedProjectId,
           chapterId: editingItemId || undefined,
+          chapterRevision: editingRevision,
           type: exportType,
         }),
       250,
@@ -175,6 +186,7 @@ export function WritingSpace() {
     title,
     selectedProjectId,
     editingItemId,
+    editingRevision,
     exportType,
     isSaved,
     setRemoteRecovery,
@@ -230,7 +242,7 @@ export function WritingSpace() {
     setIsSaved(false);
   };
 
-  const handleSave = async () => {
+  const handleSave = async (asNewDraft = false) => {
     if (inFlight.current) return;
     if (!selectedProjectId) {
       setApiError("Crie ou selecione um livro antes de salvar o texto.");
@@ -246,15 +258,16 @@ export function WritingSpace() {
         {
           title: title.trim() || "Sem Título",
           content: sanitizeHtml(content),
+          revision: asNewDraft ? undefined : editingRevision,
           status:
-            exportType === "draft"
+            asNewDraft || exportType === "draft"
               ? "DRAFT"
               : items.find((item) => item.id === editingItemId)?.status ||
                 "IN_REVIEW",
         },
-        editingItemId || undefined,
+        asNewDraft ? undefined : editingItemId || undefined,
       );
-      const key = exportType === "chapter" ? "chapters" : "drafts";
+      const key = asNewDraft || exportType === "draft" ? "drafts" : "chapters";
       setProjects((previous) =>
         previous.map((project) =>
           project.id === selectedProjectId
@@ -287,6 +300,9 @@ export function WritingSpace() {
         ),
       );
       setEditingItemId(savedChapter.id);
+      setEditingRevision(savedChapter.revision);
+      setChapterConflict(false);
+      if (asNewDraft) setExportType("draft");
       const unchanged =
         currentText.current.content === sent.content &&
         currentText.current.title === sent.title;
@@ -299,10 +315,74 @@ export function WritingSpace() {
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (error) {
+      setChapterConflict(error instanceof ApiError && error.status === 409);
       setApiError(
         error instanceof Error
           ? error.message
           : "Não foi possível salvar o texto.",
+      );
+    } finally {
+      inFlight.current = false;
+      setSaving(false);
+    }
+  };
+
+  const reloadChapter = async () => {
+    if (
+      !editingItemId ||
+      inFlight.current ||
+      !confirm(
+        "Carregar a versão atual e descartar esta edição local? Para preservar seu texto, salve sua cópia como novo rascunho.",
+      )
+    )
+      return;
+    inFlight.current = true;
+    setSaving(true);
+    const localBeforeReload = { ...currentText.current };
+    try {
+      const chapter = await apiRequest<Chapter>(
+        `/stories/${selectedProjectId}/chapters/${editingItemId}`,
+      );
+      if (
+        currentText.current.content !== localBeforeReload.content ||
+        currentText.current.title !== localBeforeReload.title
+      )
+        throw new Error(
+          "Seu texto mudou durante o carregamento. A edição local foi preservada; tente novamente.",
+        );
+      const html = sanitizeHtml(chapter.content || "");
+      setContent(html);
+      setTitle(chapter.title);
+      setEditingRevision(chapter.revision);
+      setExportType(chapter.status === "DRAFT" ? "draft" : "chapter");
+      setProjects((previous) =>
+        previous.map((project) =>
+          project.id !== selectedProjectId
+            ? project
+            : {
+                ...project,
+                chapters: [
+                  ...project.chapters.filter((item) => item.id !== chapter.id),
+                  ...(chapter.status === "DRAFT" ? [] : [chapter]),
+                ],
+                drafts: [
+                  ...project.drafts.filter((item) => item.id !== chapter.id),
+                  ...(chapter.status === "DRAFT" ? [chapter] : []),
+                ],
+              },
+        ),
+      );
+      if (editorRef.current) editorRef.current.innerHTML = html;
+      setIsSaved(true);
+      setChapterConflict(false);
+      setApiError("");
+      localStorage.removeItem(recoveryKey);
+      setRemoteRecovery({});
+    } catch (error) {
+      setApiError(
+        error instanceof Error
+          ? error.message
+          : "Não foi possível carregar o capítulo.",
       );
     } finally {
       inFlight.current = false;
@@ -353,9 +433,27 @@ export function WritingSpace() {
       {apiError && (
         <div
           role="alert"
-          className="rounded-xl bg-red-100 p-3 text-sm text-red-800"
+          className="rounded-xl bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-100"
         >
           {apiError}
+          {chapterConflict && (
+            <div className="mt-3 flex flex-wrap gap-3">
+              <button
+                disabled={saving}
+                className="rounded-xl border border-current px-3 py-2 font-bold disabled:opacity-50"
+                onClick={() => void handleSave(true)}
+              >
+                Salvar minha cópia como novo rascunho
+              </button>
+              <button
+                disabled={saving}
+                className="rounded-xl border border-current px-3 py-2 disabled:opacity-50"
+                onClick={() => void reloadChapter()}
+              >
+                Carregar versão atual do capítulo
+              </button>
+            </div>
+          )}
         </div>
       )}
       {/* HEADER */}
@@ -401,6 +499,8 @@ export function WritingSpace() {
                   return;
                 setSelectedProjectId(e.target.value);
                 setEditingItemId(null);
+                setEditingRevision(undefined);
+                setChapterConflict(false);
                 setContent("");
                 setTitle("Novo Capítulo");
                 setIsSaved(true);
@@ -470,6 +570,9 @@ export function WritingSpace() {
                 const item = items.find((i) => i.id === e.target.value);
                 if (item) {
                   setEditingItemId(item.id);
+                  setEditingRevision(item.revision);
+                  setChapterConflict(false);
+                  setApiError("");
                   setTitle(item.title);
                   setContent(sanitizeHtml(item.content));
                   setIsSaved(true);
@@ -477,6 +580,8 @@ export function WritingSpace() {
                     editorRef.current.innerHTML = sanitizeHtml(item.content);
                 } else {
                   setEditingItemId(null);
+                  setEditingRevision(undefined);
+                  setChapterConflict(false);
                 }
               }}
               className="bg-transparent text-xs font-bold text-stone-800 dark:text-stone-200 focus:outline-none max-w-[120px] truncate"
@@ -495,6 +600,8 @@ export function WritingSpace() {
               if (!isSaved && !confirm("Descartar o texto ainda não salvo?"))
                 return;
               setEditingItemId(null);
+              setEditingRevision(undefined);
+              setChapterConflict(false);
               localStorage.removeItem(recoveryKey);
               setRemoteRecovery({});
               setIsSaved(true);
@@ -785,6 +892,8 @@ export function WritingSpace() {
                   setProjects((previous) => [...previous, project]);
                   setSelectedProjectId(story.id);
                   setEditingItemId(null);
+                  setEditingRevision(undefined);
+                  setChapterConflict(false);
                   setNewTitle("");
                   setIsNewModalOpen(false);
                 } catch (error) {

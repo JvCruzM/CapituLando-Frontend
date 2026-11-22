@@ -20,6 +20,7 @@ export interface Chapter {
   wordCount: number;
   status: "DRAFT" | "IN_REVIEW" | "PUBLISHED" | "ARCHIVED";
   updatedAt: string;
+  revision: number;
 }
 
 export interface WritingProject extends Story {
@@ -80,7 +81,9 @@ export function deleteStory(storyId: string) {
 
 export function saveChapter(
   storyId: string,
-  chapter: Pick<Chapter, "title" | "content" | "status">,
+  chapter: Pick<Chapter, "title" | "content" | "status"> & {
+    revision?: number;
+  },
   chapterId?: string,
 ) {
   return apiRequest<Chapter>(

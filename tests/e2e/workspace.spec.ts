@@ -1526,3 +1526,176 @@ test("enciclopédia do mundo integra cadastros, vínculos, timeline, backup e is
   ).toBeTruthy();
   expect(errors).toEqual([]);
 });
+
+test("revisão do capítulo preserva edição em conflito e permite recuperar uma cópia", async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(120_000);
+  page.setDefaultTimeout(15_000);
+  const email = await account(request);
+  const auth = await (
+    await request.post(`${api}/auth/login`, { data: { email, password } })
+  ).json();
+  const headers = { Authorization: `Bearer ${auth.accessToken}` };
+  const story = await (
+    await request.post(`${api}/stories`, {
+      headers,
+      data: { title: "Livro com revisões" },
+    })
+  ).json();
+  const chapter = await (
+    await request.post(`${api}/stories/${story.id}/chapters`, {
+      headers,
+      data: {
+        title: "Capítulo disputado",
+        content: "<p>Texto inicial</p>",
+        status: "IN_REVIEW",
+      },
+    })
+  ).json();
+  const path = `${api}/stories/${story.id}/chapters/${chapter.id}`;
+  await login(page, email);
+  await page
+    .getByRole("button", { name: "Espaço de Escrita", exact: true })
+    .click();
+  const chapterSelect = page
+    .locator("select")
+    .filter({ has: page.locator(`option[value="${chapter.id}"]`) });
+  await chapterSelect.selectOption(chapter.id);
+  const editor = page.locator('[contenteditable="true"]').first();
+  await editor.fill("Minha edição preservada");
+  const remote = await request.put(path, {
+    headers,
+    data: {
+      title: chapter.title,
+      content: "<p>Alteração da outra sessão</p>",
+      status: "IN_REVIEW",
+      revision: chapter.revision,
+    },
+  });
+  expect(remote.status()).toBe(200);
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Este capítulo foi alterado" }),
+  ).toBeVisible();
+  await expect(editor).toContainText("Minha edição preservada");
+  expect(
+    (await (await request.get(path, { headers })).json()).content,
+  ).toContain("Alteração da outra sessão");
+  // Recarregar a página não pode trocar a revisão da recuperação pela revisão mais nova.
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Espaço de Escrita", exact: true })
+    .click();
+  await expect(editor).toContainText("Minha edição preservada");
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Salvar minha cópia como novo rascunho" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Salvar minha cópia como novo rascunho" })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await request.get(`${api}/stories/${story.id}/chapters`, {
+              headers,
+            })
+          ).json()
+        ).length,
+    )
+    .toBe(2);
+  const records = await (
+    await request.get(`${api}/stories/${story.id}/chapters`, { headers })
+  ).json();
+  expect(
+    records.find((row: { id: string }) => row.id === chapter.id).content,
+  ).toContain("Alteração da outra sessão");
+  expect(
+    records.find((row: { status: string }) => row.status === "DRAFT").content,
+  ).toContain("Minha edição preservada");
+  // O caminho de descarte exige confirmação e carrega a revisão atual antes de editar novamente.
+  await page.getByRole("button", { name: "Capítulo", exact: true }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await chapterSelect.selectOption(chapter.id);
+  await editor.fill("Segunda edição local");
+  const latest = await (await request.get(path, { headers })).json();
+  expect(
+    (
+      await request.put(path, {
+        headers,
+        data: {
+          title: chapter.title,
+          content: "<p>Versão final remota</p>",
+          revision: latest.revision,
+        },
+      })
+    ).status(),
+  ).toBe(200);
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Carregar versão atual do capítulo" })
+    .click();
+  await expect(editor).toContainText("Versão final remota");
+  await editor.fill("Edição após carregar versão atual");
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect
+    .poll(
+      async () => (await (await request.get(path, { headers })).json()).content,
+    )
+    .toContain("Edição após carregar versão atual");
+  await page
+    .getByRole("button", { name: "Projetos / Livros", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Ler Capítulo disputado", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Editar", exact: true }).click();
+  const projectEditor = page.getByRole("textbox", {
+    name: "Conteúdo",
+    exact: true,
+  });
+  await projectEditor.fill("Cópia preservada no leitor");
+  const beforeReaderConflict = await (
+    await request.get(path, { headers })
+  ).json();
+  expect(
+    (
+      await request.put(path, {
+        headers,
+        data: {
+          title: chapter.title,
+          content: "<p>Outra sessão alterou pelo leitor</p>",
+          revision: beforeReaderConflict.revision,
+        },
+      })
+    ).status(),
+  ).toBe(200);
+  await page.getByRole("button", { name: "Salvar", exact: true }).click();
+  await expect(
+    page.getByRole("alert").filter({ hasText: "Este capítulo foi alterado" }),
+  ).toBeVisible();
+  await expect(projectEditor).toContainText("Cópia preservada no leitor");
+  await page
+    .getByRole("button", { name: "Salvar edição como novo rascunho" })
+    .click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await request.get(`${api}/stories/${story.id}/chapters`, {
+              headers,
+            })
+          ).json()
+        ).length,
+    )
+    .toBe(3);
+  expect(
+    (await (await request.get(path, { headers })).json()).content,
+  ).toContain("Outra sessão alterou pelo leitor");
+});
