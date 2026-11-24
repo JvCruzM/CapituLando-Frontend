@@ -28,6 +28,15 @@ interface Document {
 type Documents = Record<Section, Document>;
 interface Store {
   flush: () => Promise<boolean>;
+  conflict: Section | null;
+  setWritingVisible: (visible: boolean) => void;
+  markConflict: (section: Section) => void;
+  readSection: (section: Section) => Promise<unknown>;
+  resolveSection: (
+    section: Section,
+    mode: "local" | "remote",
+    value?: unknown,
+  ) => Promise<unknown>;
   documents: Documents;
   change: (section: Section, update: SetStateAction<unknown>) => void;
 }
@@ -41,6 +50,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const draining = useRef(false);
   const generation = useRef(0);
   const refreshSequence = useRef(0);
+  const conflictRef = useRef<Section | null>(null);
+  const [writingVisible, setWritingVisible] = useState(false);
   const [conflict, setConflict] = useState<Section | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -59,20 +70,51 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [outboxKey]);
   const drain = useCallback(async () => {
-    if (draining.current || !current.current) return;
+    if (draining.current || !current.current || conflictRef.current) return;
     draining.current = true;
     setError("");
     setStatus("Salvando…");
     let savingSection: Section | null = null;
+    let retriedClearedWriting = false;
     try {
       for (const section of pending.current) {
         while (pending.current.has(section)) {
           savingSection = section;
           const sent: Document = current.current[section];
-          const saved: Document = await apiRequest<Document>(
-            `/workspace/${section}`,
-            { method: "PUT", body: JSON.stringify(sent) },
-          );
+          let saved: Document;
+          try {
+            saved = await apiRequest<Document>(`/workspace/${section}`, {
+              method: "PUT",
+              body: JSON.stringify(sent),
+            });
+          } catch (reason) {
+            if (
+              section === "writing" &&
+              !retriedClearedWriting &&
+              reason instanceof ApiError &&
+              reason.status === 409
+            ) {
+              const remote = await apiRequest<Documents>("/workspace");
+              const recovery = remote.writing.value as {
+                content?: string;
+                title?: string;
+              } | null;
+              if (!recovery?.content?.trim() && !recovery?.title?.trim()) {
+                retriedClearedWriting = true;
+                current.current = {
+                  ...current.current,
+                  writing: {
+                    ...current.current.writing,
+                    revision: remote.writing.revision,
+                  },
+                };
+                setDocuments(current.current);
+                persist();
+                continue;
+              }
+            }
+            throw reason;
+          }
           const latest: Document = current.current[section];
           current.current = {
             ...current.current,
@@ -83,15 +125,16 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           persist();
         }
       }
+      conflictRef.current = null;
       setConflict(null);
       setStatus("Dados sincronizados");
       window.dispatchEvent(new Event("capitulando:data-changed"));
     } catch (reason) {
-      setConflict(
+      conflictRef.current =
         reason instanceof ApiError && reason.status === 409
           ? savingSection
-          : null,
-      );
+          : null;
+      setConflict(conflictRef.current);
       setStatus("");
       setError(
         reason instanceof Error
@@ -203,9 +246,53 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     },
     [persist, drain],
   );
+  const readSection = async (section: Section) =>
+    (await apiRequest<Documents>("/workspace"))[section].value;
+  const resolveSection = async (
+    section: Section,
+    mode: "local" | "remote",
+    value?: unknown,
+  ) => {
+    const remote = await apiRequest<Documents>("/workspace");
+    if (!current.current)
+      throw new Error("Os dados ainda não foram carregados.");
+    generation.current++;
+    const selected =
+      mode === "remote"
+        ? remote[section].value
+        : (value ?? current.current[section].value);
+    current.current = {
+      ...current.current,
+      [section]: { revision: remote[section].revision, value: selected },
+    };
+    if (mode === "remote") pending.current.delete(section);
+    else pending.current.add(section);
+    conflictRef.current = null;
+    setConflict(null);
+    setError("");
+    setDocuments(current.current);
+    persist();
+    if (mode === "local") {
+      await drain();
+      if (pending.current.has(section))
+        throw new Error(
+          "A recuperação mudou novamente. Confira as versões antes de tentar outra vez.",
+        );
+    }
+    return selected;
+  };
   return (
     <>
-      {error && (
+      {conflict === "writing" && !writingVisible ? (
+        <div
+          role="alert"
+          className="border-b border-amber-300 bg-amber-50 p-4 text-amber-950 dark:bg-amber-950 dark:text-amber-100"
+        >
+          Há uma recuperação de escrita pendente. Abra o Espaço de Escrita e
+          escolha a versão para continuar a sincronização.
+        </div>
+      ) : null}
+      {error && conflict !== "writing" && (
         <div
           role="alert"
           className="border-b border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
@@ -238,6 +325,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   };
                   setDocuments(current.current);
                   persist();
+                  conflictRef.current = null;
                   await drain();
                 } catch (reason) {
                   setError(
@@ -267,6 +355,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                   setDocuments(remote);
                   persist();
                   setError("");
+                  conflictRef.current = null;
                   setConflict(null);
                 } catch (reason) {
                   setError(
@@ -287,6 +376,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           value={{
             documents,
             change,
+            conflict,
+            setWritingVisible,
+            readSection,
+            resolveSection,
+            markConflict: (section) => {
+              conflictRef.current = section;
+              setConflict(section);
+            },
             flush: async () => {
               await drain();
               for (
@@ -295,7 +392,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
                 attempt++
               )
                 await new Promise((resolve) => setTimeout(resolve, 50));
-              return pending.current.size === 0;
+              return pending.current.size === 0 && !conflictRef.current;
             },
           }}
         >
@@ -338,4 +435,22 @@ export function useWorkspaceSync() {
   const context = useContext(Context);
   if (!context) throw new Error("WorkspaceProvider não encontrado.");
   return context.flush;
+}
+
+export function useWorkspaceConflict(section: Section) {
+  const context = useContext(Context);
+  const setVisible = context?.setWritingVisible;
+  useEffect(() => {
+    if (section !== "writing" || !setVisible) return;
+    setVisible(true);
+    return () => setVisible(false);
+  }, [section, setVisible]);
+  if (!context) throw new Error("WorkspaceProvider não encontrado.");
+  return {
+    mark: () => context.markConflict(section),
+    active: context.conflict === section,
+    read: () => context.readSection(section),
+    resolve: (mode: "local" | "remote", value?: unknown) =>
+      context.resolveSection(section, mode, value),
+  };
 }

@@ -2,7 +2,11 @@
 
 import { sanitizeHtml, textToHtml } from "@/lib/html";
 import { ApiError, apiRequest } from "@/lib/api";
-import { useWorkspaceSection } from "./WorkspaceProvider";
+import {
+  useWorkspaceSection,
+  useWorkspaceConflict,
+  useWorkspaceSync,
+} from "./WorkspaceProvider";
 import { useAuthenticatedUser } from "@/components/auth/AuthGuard";
 import React, { useState, useEffect, useRef } from "react";
 import {
@@ -55,6 +59,9 @@ export function WritingSpace() {
     {},
   );
   const user = useAuthenticatedUser()!;
+  const workspaceConflict = useWorkspaceConflict("writing");
+  const flushWorkspace = useWorkspaceSync();
+  const [resolvingRecovery, setResolvingRecovery] = useState(false);
   const recoveryKey = `capitulando:${user.id}:writing`;
   const [recovered] = useState<{
     content?: string;
@@ -166,8 +173,29 @@ export function WritingSpace() {
     isSaved,
     recoveryKey,
   ]);
+  const recoveryChecked = useRef(false);
   useEffect(() => {
-    if (isSaved || !selectedProjectId) return;
+    if (recoveryChecked.current) return;
+    recoveryChecked.current = true;
+    if (
+      recovered.content &&
+      remoteRecovery.content &&
+      (recovered.content !== remoteRecovery.content ||
+        recovered.title !== remoteRecovery.title ||
+        recovered.chapterId !== remoteRecovery.chapterId ||
+        recovered.projectId !== remoteRecovery.projectId)
+    )
+      workspaceConflict.mark();
+  }, [recovered, remoteRecovery, workspaceConflict]);
+  useEffect(() => {
+    if (
+      isSaved ||
+      !selectedProjectId ||
+      chapterConflict ||
+      workspaceConflict.active ||
+      resolvingRecovery
+    )
+      return;
     const timer = setTimeout(
       () =>
         setRemoteRecovery({
@@ -189,6 +217,9 @@ export function WritingSpace() {
     editingRevision,
     exportType,
     isSaved,
+    chapterConflict,
+    workspaceConflict.active,
+    resolvingRecovery,
     setRemoteRecovery,
   ]);
   const [isFocus, setIsFocus] = useState(false);
@@ -243,7 +274,8 @@ export function WritingSpace() {
   };
 
   const handleSave = async (asNewDraft = false) => {
-    if (inFlight.current) return;
+    if (inFlight.current || resolvingRecovery || workspaceConflict.active)
+      return;
     if (!selectedProjectId) {
       setApiError("Crie ou selecione um livro antes de salvar o texto.");
       return;
@@ -253,6 +285,20 @@ export function WritingSpace() {
     setSaving(true);
     const sent = { content, title };
     try {
+      setRemoteRecovery({
+        content,
+        title,
+        projectId: selectedProjectId,
+        chapterId: editingItemId || undefined,
+        chapterRevision: editingRevision,
+        type: exportType,
+      });
+      if (!(await flushWorkspace())) {
+        setApiError(
+          "Resolva a recuperação pendente antes de salvar o capítulo.",
+        );
+        return;
+      }
       const savedChapter = await saveChapter(
         selectedProjectId,
         {
@@ -390,6 +436,87 @@ export function WritingSpace() {
     }
   };
 
+  const resolveRecovery = async (choice: "local" | "remote" | "merge") => {
+    if (resolvingRecovery) return;
+    setResolvingRecovery(true);
+    setApiError("");
+    try {
+      const remote = (await workspaceConflict.read()) as Recovery;
+      const local: Recovery = {
+        content,
+        title,
+        projectId: selectedProjectId,
+        chapterId: editingItemId || undefined,
+        chapterRevision: editingRevision,
+        type: exportType,
+      };
+      if (
+        choice === "merge" &&
+        (remote.projectId !== selectedProjectId ||
+          remote.chapterId !== local.chapterId)
+      )
+        throw new Error(
+          "As recuperações pertencem a capítulos diferentes. Escolha uma versão ou preserve o texto em um novo rascunho.",
+        );
+      const selected: Recovery =
+        choice === "remote"
+          ? { ...remote }
+          : choice === "merge"
+            ? {
+                ...local,
+                content: [
+                  sanitizeHtml(content),
+                  "<hr><p>Outra sessão</p>",
+                  sanitizeHtml(remote.content || ""),
+                ].join(""),
+              }
+            : local;
+      if (selected.chapterId && selected.projectId) {
+        const chapter = await apiRequest<Chapter>(
+          "/stories/" + selected.projectId + "/chapters/" + selected.chapterId,
+        );
+        selected.chapterRevision = chapter.revision;
+        setProjects((previous) =>
+          previous.map((project) =>
+            project.id !== selected.projectId
+              ? project
+              : {
+                  ...project,
+                  chapters: [
+                    ...project.chapters.filter((c) => c.id !== chapter.id),
+                    ...(chapter.status !== "DRAFT" ? [chapter] : []),
+                  ],
+                  drafts: [
+                    ...project.drafts.filter((c) => c.id !== chapter.id),
+                    ...(chapter.status === "DRAFT" ? [chapter] : []),
+                  ],
+                },
+          ),
+        );
+      }
+      await workspaceConflict.resolve("local", selected);
+      const html = sanitizeHtml(selected.content || "");
+      setContent(html);
+      setTitle(selected.title || "Novo Capítulo");
+      setSelectedProjectId(selected.projectId || selectedProjectId);
+      setEditingItemId(selected.chapterId || null);
+      setEditingRevision(selected.chapterRevision);
+      setExportType(selected.type || "chapter");
+      currentText.current = {
+        content: html,
+        title: selected.title || "Novo Capítulo",
+      };
+      if (editorRef.current) editorRef.current.innerHTML = html;
+      setChapterConflict(false);
+      setIsSaved(false);
+    } catch (e) {
+      setApiError(
+        e instanceof Error ? e.message : "Falha ao resolver a recuperação.",
+      );
+    } finally {
+      setResolvingRecovery(false);
+    }
+  };
   const downloadFile = (type: "txt" | "pdf") => {
     if (type === "txt") {
       const blob = new Blob([`${title}\n\n${plainText}`], {
@@ -436,7 +563,7 @@ export function WritingSpace() {
           className="rounded-xl bg-red-100 p-3 text-sm text-red-800 dark:bg-red-950 dark:text-red-100"
         >
           {apiError}
-          {chapterConflict && (
+          {chapterConflict && !workspaceConflict.active && (
             <div className="mt-3 flex flex-wrap gap-3">
               <button
                 disabled={saving}
@@ -454,6 +581,39 @@ export function WritingSpace() {
               </button>
             </div>
           )}
+        </div>
+      )}
+      {workspaceConflict.active && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-400 bg-amber-50 p-4 text-stone-900 dark:bg-amber-950 dark:text-stone-100"
+        >
+          <h3 className="font-bold">Recuperação alterada em outra sessão</h3>
+          <p>
+            Esta recuperação é o texto ainda não salvo no capítulo. Escolha qual
+            será sua próxima edição sobre a versão atual do capítulo salvo. As
+            opções abaixo resolvem a recuperação e atualizam a revisão do
+            capítulo em uma única etapa.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            {(
+              [
+                ["local", "Manter meu texto"],
+                ["remote", "Usar recuperação da outra sessão"],
+                ["merge", "Mesclar recuperações"],
+              ] as const
+            ).map(([choice, label]) => (
+              <button
+                key={choice}
+                disabled={resolvingRecovery}
+                className="rounded-xl border border-current px-3 py-2 disabled:opacity-50"
+                onClick={() => void resolveRecovery(choice)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {resolvingRecovery && <p role="status">Resolvendo recuperação…</p>}
         </div>
       )}
       {/* HEADER */}
@@ -829,7 +989,7 @@ export function WritingSpace() {
                 element.dataset.initialized = "true";
               }
             }}
-            contentEditable
+            contentEditable={!saving && !resolvingRecovery}
             onPaste={handlePaste}
             onInput={(e) => {
               setContent(e.currentTarget.innerHTML);
