@@ -4,11 +4,12 @@ import Link from "next/link";
 import { PublicShell } from "@/components/PublicShell";
 import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiRequest, type ApiMessage } from "@/lib/api";
+import { completeEmailAction, mobileEmailLink } from "@/lib/email-actions";
 
 function ConfirmarEmailForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
+  const source = searchParams.get("source");
   const [erro, setErro] = useState("");
   const [mensagem, setMensagem] = useState("");
   const [carregando, setCarregando] = useState(false);
@@ -25,9 +26,8 @@ function ConfirmarEmailForm() {
     }
     setCarregando(true);
     try {
-      const result = await apiRequest<ApiMessage>("/auth/verify-email", {
-        method: "POST",
-        body: JSON.stringify({ token }),
+      const result = await completeEmailAction(source, "verify-email", {
+        token,
       });
       setMensagem(
         result.message ||
@@ -81,12 +81,35 @@ function ConfirmarEmailForm() {
           </form>
         )}
         <div className="mt-6 text-center">
-          <Link
-            href="/login"
-            className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
-          >
-            Ir para o login
-          </Link>
+          {source === "mobile" ? (
+            <>
+              {!mensagem && (
+                <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
+                  Você pode concluir aqui no navegador ou abrir este link no
+                  aplicativo instalado.
+                </p>
+              )}
+              <a
+                href={
+                  mobileEmailLink(
+                    source,
+                    "verify-email",
+                    mensagem ? undefined : token,
+                  ) ?? undefined
+                }
+                className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
+              >
+                {mensagem ? "Voltar ao aplicativo" : "Abrir no aplicativo"}
+              </a>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
+            >
+              Ir para o login
+            </Link>
+          )}
         </div>
       </div>
     </main>

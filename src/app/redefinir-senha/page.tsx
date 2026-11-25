@@ -4,11 +4,12 @@ import Link from "next/link";
 import { PublicShell } from "@/components/PublicShell";
 import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
-import { apiRequest, type ApiMessage } from "@/lib/api";
+import { completeEmailAction, mobileEmailLink } from "@/lib/email-actions";
 
 function RedefinirSenhaForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") || "";
+  const source = searchParams.get("source");
   const [senha, setSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
   const [erro, setErro] = useState("");
@@ -36,9 +37,9 @@ function RedefinirSenhaForm() {
 
     setCarregando(true);
     try {
-      const result = await apiRequest<ApiMessage>("/auth/reset-password", {
-        method: "POST",
-        body: JSON.stringify({ token, newPassword: senha }),
+      const result = await completeEmailAction(source, "reset-password", {
+        token,
+        newPassword: senha,
       });
       window.sessionStorage.removeItem("capitulando_access_token");
       window.sessionStorage.removeItem("capitulando_user");
@@ -128,12 +129,35 @@ function RedefinirSenhaForm() {
           </form>
         )}
         <div className="mt-6 text-center">
-          <Link
-            href="/login"
-            className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
-          >
-            Voltar para o login
-          </Link>
+          {source === "mobile" ? (
+            <>
+              {!mensagem && (
+                <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
+                  Você pode concluir aqui no navegador ou abrir este link no
+                  aplicativo instalado.
+                </p>
+              )}
+              <a
+                href={
+                  mobileEmailLink(
+                    source,
+                    "reset-password",
+                    mensagem ? undefined : token,
+                  ) ?? undefined
+                }
+                className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
+              >
+                {mensagem ? "Voltar ao aplicativo" : "Abrir no aplicativo"}
+              </a>
+            </>
+          ) : (
+            <Link
+              href="/login"
+              className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
+            >
+              Voltar para o login
+            </Link>
+          )}
         </div>
       </div>
     </main>
