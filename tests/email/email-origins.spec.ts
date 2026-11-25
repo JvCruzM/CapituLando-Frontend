@@ -3,7 +3,7 @@ const token = "email-fixture-token-1234567890";
 test.beforeEach(async ({ request }) => {
   await request.get("http://127.0.0.1:4327/_test/reset");
 });
-test("link mobile confirma pela API Express sem usar Spring e permite abrir no app", async ({
+test("link mobile confirma pela API Express sem usar Spring e orienta voltar manualmente ao Expo Go", async ({
   page,
   request,
 }) => {
@@ -14,8 +14,11 @@ test("link mobile confirma pela API Express sem usar Spring e permite abrir no a
   });
   await page.goto("/confirmar-email?source=mobile&token=" + token);
   await expect(
+    page.locator('a[href^="capitulando:"],a[href^="exp:"],a[href^="exps:"]'),
+  ).toHaveCount(0);
+  await expect(
     page.getByRole("link", { name: "Abrir no aplicativo" }),
-  ).toHaveAttribute("href", "capitulando://confirmar-email?token=" + token);
+  ).toHaveCount(0);
   await page
     .getByRole("button", { name: "Confirmar e-mail", exact: true })
     .click();
@@ -35,8 +38,13 @@ test("link mobile confirma pela API Express sem usar Spring e permite abrir no a
   ]);
   expect(springCalls).toBe(0);
   await expect(
+    page.getByText(
+      "Você já pode fechar esta aba e voltar ao Expo Go para entrar na sua conta.",
+    ),
+  ).toBeVisible();
+  await expect(
     page.getByRole("link", { name: "Voltar ao aplicativo" }),
-  ).toHaveAttribute("href", "capitulando://entrar");
+  ).toHaveCount(0);
   await page.reload();
   await page
     .getByRole("button", { name: "Confirmar e-mail", exact: true })
@@ -52,8 +60,11 @@ test("redefinição mobile usa Express e informa reutilização do token", async
 }) => {
   await page.goto("/redefinir-senha?source=mobile&token=" + token);
   await expect(
+    page.locator('a[href^="capitulando:"],a[href^="exp:"],a[href^="exps:"]'),
+  ).toHaveCount(0);
+  await expect(
     page.getByRole("link", { name: "Abrir no aplicativo" }),
-  ).toHaveAttribute("href", "capitulando://redefinir-senha?token=" + token);
+  ).toHaveCount(0);
   await page.getByLabel("Nova senha", { exact: true }).fill("SenhaTeste123!");
   await page.getByLabel("Confirmar nova senha").fill("SenhaTeste123!");
   await page
@@ -62,6 +73,14 @@ test("redefinição mobile usa Express e informa reutilização do token", async
   await expect(page.getByRole("status")).toHaveText(
     "Senha redefinida no aplicativo.",
   );
+  await expect(
+    page.getByText(
+      "Você já pode fechar esta aba e voltar ao Expo Go para entrar com a nova senha.",
+    ),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "Voltar ao aplicativo" }),
+  ).toHaveCount(0);
   const calls = await (
     await request.get("http://127.0.0.1:4327/_test/calls")
   ).json();

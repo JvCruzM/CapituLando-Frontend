@@ -1,19 +1,5 @@
 import { apiRequest, type ApiMessage } from "./api";
 export type EmailAction = "verify-email" | "reset-password";
-export function mobileEmailLink(
-  source: string | null,
-  action: EmailAction,
-  token?: string,
-) {
-  if (source !== "mobile") return null;
-  if (!token) return "capitulando://entrar";
-  return (
-    "capitulando://" +
-    (action === "verify-email" ? "confirmar-email" : "redefinir-senha") +
-    "?token=" +
-    encodeURIComponent(token)
-  );
-}
 export async function completeEmailAction(
   source: string | null,
   action: EmailAction,

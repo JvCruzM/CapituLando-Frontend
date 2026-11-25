@@ -4,7 +4,7 @@ import Link from "next/link";
 import { PublicShell } from "@/components/PublicShell";
 import { Suspense, useState, type FormEvent } from "react";
 import { useSearchParams } from "next/navigation";
-import { completeEmailAction, mobileEmailLink } from "@/lib/email-actions";
+import { completeEmailAction } from "@/lib/email-actions";
 
 function RedefinirSenhaForm() {
   const searchParams = useSearchParams();
@@ -130,26 +130,11 @@ function RedefinirSenhaForm() {
         )}
         <div className="mt-6 text-center">
           {source === "mobile" ? (
-            <>
-              {!mensagem && (
-                <p className="mb-3 text-sm text-stone-600 dark:text-stone-300">
-                  Você pode concluir aqui no navegador ou abrir este link no
-                  aplicativo instalado.
-                </p>
-              )}
-              <a
-                href={
-                  mobileEmailLink(
-                    source,
-                    "reset-password",
-                    mensagem ? undefined : token,
-                  ) ?? undefined
-                }
-                className="font-semibold text-[#4b1d3f] dark:text-pink-200 hover:underline"
-              >
-                {mensagem ? "Voltar ao aplicativo" : "Abrir no aplicativo"}
-              </a>
-            </>
+            <p className="text-sm text-stone-600 dark:text-stone-300">
+              {mensagem
+                ? "Você já pode fechar esta aba e voltar ao Expo Go para entrar com a nova senha."
+                : "Redefina sua senha aqui no navegador. Depois, volte ao Expo Go."}
+            </p>
           ) : (
             <Link
               href="/login"
