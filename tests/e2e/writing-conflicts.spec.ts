@@ -7,7 +7,11 @@ const initial = {
   title: "Capítulo",
   content: "<p>Minha recuperação</p>",
 };
-async function setup(page: Page, withLocal = true) {
+async function setup(
+  page: Page,
+  withLocal = true,
+  chapterContent = "<p>Capítulo já salvo</p>",
+) {
   const user = {
     id: "mock-writer",
     email: "writer@example.test",
@@ -20,7 +24,7 @@ async function setup(page: Page, withLocal = true) {
     storyId: "book",
     orderIndex: 1,
     title: "Capítulo",
-    content: "<p>Capítulo já salvo</p>",
+    content: chapterContent,
     wordCount: 4,
     status: "IN_REVIEW",
     revision: 2,
@@ -247,4 +251,98 @@ test("recuperação limpa não abre menu de texto vazio antes do conflito do cap
       exact: true,
     }),
   ).toBeVisible();
+});
+
+test("títulos H1 e H2 recebidos do mobile mantêm hierarquia visual e HTML ao salvar no web", async ({
+  page,
+}) => {
+  const html =
+    "<h1>Título principal</h1><h2>Subtítulo</h2><p>Texto do capítulo</p>";
+  const server = await setup(page, false, html);
+  page.on("dialog", (dialog) => dialog.accept());
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="chapter"]') })
+    .selectOption("chapter");
+  const editor = page.locator("[contenteditable]");
+  await expect(editor.locator("h1")).toHaveText("Título principal");
+  await expect(editor.locator("h2")).toHaveText("Subtítulo");
+  const dimensions = await editor.evaluate((element) => {
+    const style = (selector: string) =>
+      getComputedStyle(element.querySelector(selector)!);
+    return {
+      h1: parseFloat(style("h1").fontSize),
+      h2: parseFloat(style("h2").fontSize),
+      body: parseFloat(style("p").fontSize),
+      weight: style("h1").fontWeight,
+    };
+  });
+  expect(dimensions.h1).toBeGreaterThan(dimensions.h2);
+  expect(dimensions.h2).toBeGreaterThan(dimensions.body);
+  expect(Number(dimensions.weight)).toBeGreaterThanOrEqual(700);
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect.poll(() => server.saves).toBe(1);
+  expect(server.chapter.content).toBe(html);
+});
+
+test("listas têm marcadores e repetir H1/H2 mantém títulos dentro dos itens sem aninhamento", async ({
+  page,
+}) => {
+  const server = await setup(page, false);
+  page.on("dialog", (dialog) => dialog.accept());
+  await page
+    .locator("select")
+    .filter({ has: page.locator('option[value="chapter"]') })
+    .selectOption("chapter");
+  const editor = page.locator("[contenteditable]");
+  await editor.fill("Primeiro");
+  await editor.press("End");
+  await editor.press("Enter");
+  await page.keyboard.insertText("Segundo");
+  await editor.evaluate((element) => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const selection = getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  await page.getByRole("button", { name: "Lista", exact: true }).click();
+  await expect(editor.locator("li")).toHaveCount(2);
+  await expect(editor.locator("ul")).toHaveCSS("list-style-type", "disc");
+  await expect(editor.locator("li").first()).toHaveCSS("display", "list-item");
+  await editor
+    .locator("li")
+    .first()
+    .evaluate((item) => {
+      const range = document.createRange();
+      range.selectNodeContents(item.querySelector("p") || item);
+      const selection = getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+  for (let i = 0; i < 12; i++)
+    await page.getByRole("button", { name: "Título H1", exact: true }).click();
+  await expect(editor.locator("li > h1")).toHaveCount(1);
+  await expect(
+    editor.locator("h1 h1,h1 h2,h2 h1,h2 h2,h1 ul,h2 ul"),
+  ).toHaveCount(0);
+  for (let i = 0; i < 12; i++)
+    await page.getByRole("button", { name: "Título H2", exact: true }).click();
+  await expect(editor.locator("li > h2")).toHaveCount(1);
+  await expect(
+    editor.locator("h1 h1,h1 h2,h2 h1,h2 h2,h1 ul,h2 ul"),
+  ).toHaveCount(0);
+  await expect(editor.locator("li")).toHaveCount(2);
+  await expect(editor).toContainText("Primeiro");
+  await expect(editor).toContainText("Segundo");
+  const ratio = await editor.evaluate(
+    (element) =>
+      parseFloat(getComputedStyle(element.querySelector("h2")!).fontSize) /
+      parseFloat(getComputedStyle(element).fontSize),
+  );
+  expect(ratio).toBeCloseTo(1.5);
+  await page.getByRole("button", { name: "Atualizar", exact: true }).click();
+  await expect.poll(() => server.saves).toBe(1);
+  expect(server.chapter.content).toContain("<li><h2>Primeiro</h2></li>");
+  expect(server.chapter.content).toContain("Segundo");
 });

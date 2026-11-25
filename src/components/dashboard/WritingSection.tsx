@@ -1,5 +1,6 @@
 "use client";
 
+import { prepareEditorBlocks } from "@/lib/editor-formatting";
 import { sanitizeHtml, textToHtml } from "@/lib/html";
 import { ApiError, apiRequest } from "@/lib/api";
 import {
@@ -237,6 +238,21 @@ export function WritingSpace() {
   const [showSettings, setShowSettings] = useState(false);
 
   const editorRef = useRef<HTMLDivElement>(null);
+  const savedEditorRange = useRef<Range | null>(null);
+  useEffect(() => {
+    const remember = () => {
+      const editor = editorRef.current,
+        selection = window.getSelection();
+      if (
+        editor &&
+        selection?.rangeCount &&
+        editor.contains(selection.anchorNode)
+      )
+        savedEditorRange.current = selection.getRangeAt(0).cloneRange();
+    };
+    document.addEventListener("selectionchange", remember);
+    return () => document.removeEventListener("selectionchange", remember);
+  }, []);
   const proj = projects.find((p) => p.id === selectedProjectId) || projects[0];
   const items =
     exportType === "chapter" ? proj?.chapters || [] : proj?.drafts || [];
@@ -260,8 +276,21 @@ export function WritingSpace() {
   const readingTime = Math.ceil(wordCount / 200);
 
   const applyFormat = (command: string, value?: string) => {
+    const editor = editorRef.current;
+    if (!editor || saving || resolvingRecovery) return;
+    editor.focus();
+    const selection = window.getSelection(),
+      range = savedEditorRange.current;
+    if (selection && range && editor.contains(range.commonAncestorContainer)) {
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    prepareEditorBlocks(editor);
     document.execCommand(command, false, value);
-    if (editorRef.current) setContent(editorRef.current.innerHTML);
+    prepareEditorBlocks(editor);
+    if (selection?.rangeCount && editor.contains(selection.anchorNode))
+      savedEditorRange.current = selection.getRangeAt(0).cloneRange();
+    setContent(editor.innerHTML);
     setIsSaved(false);
   };
 
@@ -418,7 +447,10 @@ export function WritingSpace() {
               },
         ),
       );
-      if (editorRef.current) editorRef.current.innerHTML = html;
+      if (editorRef.current) {
+        editorRef.current.innerHTML = html;
+        prepareEditorBlocks(editorRef.current);
+      }
       setIsSaved(true);
       setChapterConflict(false);
       setApiError("");
@@ -506,7 +538,10 @@ export function WritingSpace() {
         content: html,
         title: selected.title || "Novo Capítulo",
       };
-      if (editorRef.current) editorRef.current.innerHTML = html;
+      if (editorRef.current) {
+        editorRef.current.innerHTML = html;
+        prepareEditorBlocks(editorRef.current);
+      }
       setChapterConflict(false);
       setIsSaved(false);
     } catch (e) {
@@ -554,6 +589,12 @@ export function WritingSpace() {
     >
       <style>{`
         .editor-area p, .editor-area div { text-indent: ${indent ? "2.5em" : "0"} !important; margin-bottom: 0.6em; display: block; }
+        .editor-area h1 { font-size: 2em; font-weight: 700; line-height: 1.2; margin: 0.67em 0; }
+        .editor-area h2 { font-size: 1.5em; font-weight: 700; line-height: 1.3; margin: 0.83em 0; }
+        .editor-area ul { list-style-type: disc; padding-inline-start: 2em; margin: 0.75em 0; }
+        .editor-area ol { list-style-type: decimal; padding-inline-start: 2em; margin: 0.75em 0; }
+        .editor-area li { display: list-item; }
+        .editor-area li > p, .editor-area li > div { text-indent: 0 !important; margin: 0; }
         .editor-area h1, .editor-area h2, .editor-area blockquote, .editor-area ul, .editor-area ol, .editor-area li { text-indent: 0 !important; }
       `}</style>
 
@@ -736,8 +777,10 @@ export function WritingSpace() {
                   setTitle(item.title);
                   setContent(sanitizeHtml(item.content));
                   setIsSaved(true);
-                  if (editorRef.current)
+                  if (editorRef.current) {
                     editorRef.current.innerHTML = sanitizeHtml(item.content);
+                    prepareEditorBlocks(editorRef.current);
+                  }
                 } else {
                   setEditingItemId(null);
                   setEditingRevision(undefined);
@@ -912,6 +955,7 @@ export function WritingSpace() {
         <div className="flex flex-wrap items-center gap-1.5 pb-3 border-b border-[#4b1d3f]/15 dark:border-[#2e1d3a] text-stone-700 dark:text-stone-300">
           <button
             onMouseDown={(event) => event.preventDefault()}
+            aria-label="Negrito"
             onClick={() => applyFormat("bold")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg font-bold"
           >
@@ -919,6 +963,7 @@ export function WritingSpace() {
           </button>
           <button
             onMouseDown={(event) => event.preventDefault()}
+            aria-label="Itálico"
             onClick={() => applyFormat("italic")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg italic"
           >
@@ -926,6 +971,7 @@ export function WritingSpace() {
           </button>
           <button
             onMouseDown={(event) => event.preventDefault()}
+            aria-label="Sublinhado"
             onClick={() => applyFormat("underline")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg underline"
           >
@@ -933,12 +979,16 @@ export function WritingSpace() {
           </button>
           <div className="h-4 w-px bg-stone-300 dark:bg-stone-700 mx-1" />
           <button
+            onMouseDown={(event) => event.preventDefault()}
+            aria-label="Título H1"
             onClick={() => applyFormat("formatBlock", "<h1>")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
             <Heading1 size={16} />
           </button>
           <button
+            onMouseDown={(event) => event.preventDefault()}
+            aria-label="Título H2"
             onClick={() => applyFormat("formatBlock", "<h2>")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
@@ -946,6 +996,8 @@ export function WritingSpace() {
           </button>
           <div className="h-4 w-px bg-stone-300 dark:bg-[#2e1d3a] mx-1" />
           <button
+            onMouseDown={(event) => event.preventDefault()}
+            aria-label="Citação"
             onClick={() => applyFormat("formatBlock", "<blockquote>")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
@@ -953,6 +1005,7 @@ export function WritingSpace() {
           </button>
           <button
             onMouseDown={(event) => event.preventDefault()}
+            aria-label="Lista"
             onClick={() => applyFormat("insertUnorderedList")}
             className="p-1.5 hover:bg-[#f3ccde]/40 dark:hover:bg-[#281832] rounded-lg"
           >
@@ -986,12 +1039,14 @@ export function WritingSpace() {
               editorRef.current = element;
               if (element && !element.dataset.initialized) {
                 element.innerHTML = sanitizeHtml(recovered.content || "");
+                prepareEditorBlocks(element);
                 element.dataset.initialized = "true";
               }
             }}
             contentEditable={!saving && !resolvingRecovery}
             onPaste={handlePaste}
             onInput={(e) => {
+              prepareEditorBlocks(e.currentTarget);
               setContent(e.currentTarget.innerHTML);
               setIsSaved(false);
             }}
